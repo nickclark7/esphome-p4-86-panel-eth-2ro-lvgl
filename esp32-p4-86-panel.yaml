@@ -5184,27 +5184,6 @@ text_sensor:
                     - lvgl.dropdown.update:
                         id: dropdown_climateacmode
                         selected_index: 4
-        # Sensor mode (slot 1 index > climate_hvac_count): the entity is a plain temp
-        # sensor whose state is the temperature -> show a read-only card, hide button.
-        - if:
-            condition:
-              lambda: 'return (1 > ${climate_hvac_count});'
-            then:
-              # Reuse the tile as a read-only temp card: show it with a thermometer
-              # glyph (the long-press-to-open-controls is guarded off for sensors).
-              - lvgl.widget.show: lbl_climate_1
-              - lvgl.widget.show: temp_climate_1
-              - lvgl.widget.show: but_climate_1
-              - lvgl.label.update:
-                  id: ico_climate_1
-                  text: "\U000F050F"
-              - lvgl.label.update:
-                  id: temp_climate_1
-                  text: !lambda |-
-                    char buf[16];
-                    sprintf(buf, "%.1f%s", atof(id(climate1_item).state.c_str()), id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
-                    return buf;
-
   - platform: homeassistant
     id: climate2_item
     entity_id: ${climate2_entity}
