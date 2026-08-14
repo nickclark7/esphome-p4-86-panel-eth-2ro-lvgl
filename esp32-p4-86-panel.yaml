@@ -37,8 +37,9 @@ substitutions:
 
   climate_page_title: "Climate"
   climate_page_hide_from_navigation: false
-  climate1_name: "Room 1 AC"
-  climate1_entity: climate.air_conditioner #climate
+  climate1_name: "Room 1"
+  climate1_entity: sensor.temperature1 #sensor
+  climate1_entity_ac: climate.air_conditioner #climate
   climate2_name: "Room 2"
   climate2_entity: sensor.temperature2 #sensor
   climate3_name: "Room 3"
@@ -94,6 +95,15 @@ substitutions:
   controls6_state: input_boolean.vacuum #status - switch,light,fan,cover,sensor,binary_sensor
   controls6_icon_off: "\U000F1C01" #icon from icon_glyphs
   controls6_icon_on: "\U000F070D" #icon from icon_glyphs
+
+  cover_page_title: "Covers"
+  cover_page_hide_from_navigation: true
+  cover1_name: "Cover 1"
+  cover1_entity: cover.cover1
+  cover2_name: "Cover 2"
+  cover2_entity: cover.cover2
+  cover3_name: "Cover 3"
+  cover3_entity: cover.cover3
   
   media_page_title: "Media"
   media_page_hide_from_navigation: false
@@ -160,6 +170,7 @@ substitutions:
   screensaver_lower_right_entity: sensor.allergen_index #sensor
   screensaver_lower_right_dp: 0 #decimal places for lower right entity
   screensaver_lower_right_units: " IAI"
+  screensaver_next_alarmclock: "true"
   
   alarmclock_hide_switcher: false
   
@@ -245,6 +256,32 @@ substitutions:
   wakesound_external: /local/sounds/awake.mp3
   notify_external: /local/sounds/notify.mp3
 
+###### Voice Assistant Model Sensitivity Thresholds ######
+  va_model_sensitivity_okay_nabu_high: 143 # 0.56
+  va_model_sensitivity_okay_nabu_medium: 176 # 0.69
+  va_model_sensitivity_okay_nabu_low: 247 # 0.97
+  va_model_sensitivity_hey_jarvis_high: 212 # 0.83
+  va_model_sensitivity_hey_jarvis_medium: 235 # 0.92
+  va_model_sensitivity_hey_jarvis_low: 247 # 0.97 (Manifest's default)
+  va_model_sensitivity_hey_mycroft_high: 237 # 0.93
+  va_model_sensitivity_hey_mycroft_medium: 242 # 0.95 (Manifest's default)
+  va_model_sensitivity_hey_mycroft_low: 253 # 0.99
+  va_model_sensitivity_alexa_high: 217 # 0.85
+  va_model_sensitivity_alexa_medium: 235 # 0.92
+  va_model_sensitivity_alexa_low: 250 # 0.98
+  va_model_sensitivity_okay_computer_high: 212
+  va_model_sensitivity_okay_computer_medium: 235
+  va_model_sensitivity_okay_computer_low: 247
+  va_model_sensitivity_hey_home_assistant_high: 212
+  va_model_sensitivity_hey_home_assistant_medium: 235
+  va_model_sensitivity_hey_home_assistant_low: 247
+  va_model_sensitivity_okay_hal_high: 212
+  va_model_sensitivity_okay_hal_medium: 235
+  va_model_sensitivity_okay_hal_low: 247
+  va_model_sensitivity_hey_luna_high: 212
+  va_model_sensitivity_hey_luna_medium: 235
+  va_model_sensitivity_hey_luna_low: 247
+
 ######  Voice Assistant Phase IDs ######
   voice_assist_idle_phase_id: "1"
   voice_assist_listening_phase_id: "2"
@@ -264,7 +301,7 @@ substitutions:
 
 ################################### DO NOT CHANGE BELOW HERE UNLESS YOU ARE FAMILIAR WITH ESPHOME ###################################
 
-  project_version: "2026.07.02"
+  project_version: "2026.07.19.2"
 
 ###### Hardware Specific Configuration ######
 
@@ -277,6 +314,8 @@ substitutions:
   wifi_fast_connect: true
   wifi_power_save_mode: NONE #NONE, LIGHT(default for esp32), HIGH
   wifi_use_native_roaming: true #if false uses ESPHome post connect roaming
+  
+  voice_assistant_failed_reboot: "false" #restarts device on voice assistant hangs
 
   screen_max_brightness: 0.8
 
@@ -496,6 +535,7 @@ wifi:
   power_save_mode: ${wifi_power_save_mode}
   enable_btm: ${wifi_use_native_roaming}  # 802.11v BSS Transition Management
   enable_rrm: ${wifi_use_native_roaming}  # 802.11k Radio Resource Management
+  reboot_timeout: 10min
   ap:
     ssid: ${name}
     password: ${wifi_fallback_pwd}   
@@ -513,7 +553,7 @@ captive_portal:
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2026.6.0
+  min_version: 2026.7.0
   name_add_mac_suffix: false
   on_boot:
     - priority: -150
@@ -642,6 +682,120 @@ light:
                 show_snow: false
 
 sensor:
+  - platform: homeassistant
+    id: cover1_position
+    entity_id: ${cover1_entity}
+    attribute: current_position
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x == 100;
+          then:
+            - lvgl.widget.update:
+                id: cover1_up_icon
+                text_opa: 60%
+          else:
+            - lvgl.widget.update:
+                id: cover1_up_icon
+                text_opa: 100%
+      - if:
+          condition:
+            lambda: return x == 0;
+          then:
+            - lvgl.widget.update:
+                id: cover1_down_icon
+                text_opa: 60%
+          else:
+            - lvgl.widget.update:
+                id: cover1_down_icon
+                text_opa: 100%
+      - if:
+          condition:
+            lambda: return id(cover1_state).state != "opening" && id(cover1_state).state != "closing";
+          then:
+            - lvgl.label.update:
+                id: cover1_status
+                text:
+                  format: "%.0f%%"
+                  args: [x]
+
+  - platform: homeassistant
+    id: cover2_position
+    entity_id: ${cover2_entity}
+    attribute: current_position
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x == 100;
+          then:
+            - lvgl.widget.update:
+                id: cover2_up_icon
+                text_opa: 60%
+          else:
+            - lvgl.widget.update:
+                id: cover2_up_icon
+                text_opa: 100%
+      - if:
+          condition:
+            lambda: return x == 0;
+          then:
+            - lvgl.widget.update:
+                id: cover2_down_icon
+                text_opa: 60%
+          else:
+            - lvgl.widget.update:
+                id: cover2_down_icon
+                text_opa: 100%
+      - if:
+          condition:
+            lambda: return id(cover2_state).state != "opening" && id(cover2_state).state != "closing";
+          then:
+            - lvgl.label.update:
+                id: cover2_status
+                text:
+                  format: "%.0f%%"
+                  args: [x]
+
+  - platform: homeassistant
+    id: cover3_position
+    entity_id: ${cover3_entity}
+    attribute: current_position
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x == 100;
+          then:
+            - lvgl.widget.update:
+                id: cover3_up_icon
+                text_opa: 60%
+          else:
+            - lvgl.widget.update:
+                id: cover3_up_icon
+                text_opa: 100%
+      - if:
+          condition:
+            lambda: return x == 0;
+          then:
+            - lvgl.widget.update:
+                id: cover3_down_icon
+                text_opa: 60%
+          else:
+            - lvgl.widget.update:
+                id: cover3_down_icon
+                text_opa: 100%
+      - if:
+          condition:
+            lambda: return id(cover3_state).state != "opening" && id(cover3_state).state != "closing";
+          then:
+            - lvgl.label.update:
+                id: cover3_status
+                text:
+                  format: "%.0f%%"
+                  args: [x]
+
   - platform: uptime
     id: up_sens
     on_value:
@@ -678,44 +832,44 @@ sensor:
 
 ### CLIMATE PAGE SENSORS ###
   - platform: homeassistant
-    id: climate1_temp
-    entity_id: ${climate1_entity}
+    id: climate1_temp_ac
+    entity_id: ${climate1_entity_ac}
     attribute: current_temperature
     internal: true
     on_value:
       then:
-        - lvgl.widget.show: lbl_climate_1
-        - lvgl.widget.show: temp_climate_1
-        - lvgl.widget.show: but_climate_1
+        - script.execute: refresh_climate_1
         - lvgl.label.update:
-            id: temp_climate_1   
-            text: !lambda |-
-              char buf[10];
-              sprintf(buf, "%.1f%s", x, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
-              return buf;
-        - lvgl.label.update:
-            id: studioac_currenttemp   
+            id: climateac_currenttemp
             text: !lambda |-
               char buf[10];
               sprintf(buf, "%.1f%s", x, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
               return buf; 
 
   - platform: homeassistant
-    id: climate1_temp2
-    entity_id: ${climate1_entity}
+    id: climate1_temp2_ac
+    entity_id: ${climate1_entity_ac}
     attribute: temperature
     internal: true
     on_value:
       then:
         - lvgl.label.update:
-            id: studioac_targettemp   
+            id: climateac_targettemp
             text: !lambda |-
               char buf[10];
               sprintf(buf, "%.1f%s", x, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
               return buf; 
         - lvgl.spinbox.update:
-            id: spinbox_studioac
+            id: spinbox_climateac
             value: !lambda return x;
+
+  - platform: homeassistant
+    id: climate1_temp
+    entity_id: ${climate1_entity}
+    internal: true
+    on_value:
+      then:
+        - script.execute: refresh_climate_1
 
   - platform: homeassistant
     id: climate2_temp
@@ -1503,9 +1657,11 @@ voice_assistant:
           return id(voice_assistant_timeout);
     - if:
         condition:
-          any:
-            - media_player.is_announcing:
-            - media_player.is_playing:
+          and:
+            - lambda: return id(voice_assistant_reboot);
+            - any:
+                - media_player.is_announcing:
+                - media_player.is_playing:
         then:
           - lambda: ESP_LOGD("voice_assistant", "Forced Reboot");
           - button.press: reboot
@@ -1773,6 +1929,54 @@ script:
                                   timeout: 2500ms
                               - delay: 150ms
                         - voice_assistant.start:
+  - id: refresh_climate_1
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(climate1_item_ac).has_state() &&
+                     id(climate1_item_ac).state != "unknown" &&
+                     id(climate1_item_ac).state != "unavailable";
+          then:
+            - lvgl.widget.show: lbl_climate_1
+            - lvgl.widget.show: temp_climate_1
+            - lvgl.widget.show: but_climate_1
+            - lvgl.widget.hide: icon_climate_1
+            - lvgl.label.update:
+                id: temp_climate_1
+                text: !lambda |-
+                  if (!id(climate1_temp_ac).has_state() || isnan(id(climate1_temp_ac).state)) {
+                    return std::string(" ");
+                  }
+                  char buf[10];
+                  sprintf(buf, "%.1f%s", id(climate1_temp_ac).state, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
+                  return std::string(buf);
+          else:
+            - if:
+                condition:
+                  lambda: |-
+                    return id(climate1_item_sensor).has_state() &&
+                           id(climate1_item_sensor).state != "unknown" &&
+                           id(climate1_item_sensor).state != "unavailable" &&
+                           id(climate1_temp).has_state() &&
+                           !isnan(id(climate1_temp).state);
+                then:
+                  - lvgl.widget.show: lbl_climate_1
+                  - lvgl.widget.show: temp_climate_1
+                  - lvgl.widget.show: icon_climate_1
+                  - lvgl.widget.hide: but_climate_1
+                  - lvgl.label.update:
+                      id: temp_climate_1
+                      text: !lambda |-
+                        char buf[10];
+                        sprintf(buf, "%.1f%s", id(climate1_temp).state, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
+                        return std::string(buf);
+                else:
+                  - lvgl.widget.hide: lbl_climate_1
+                  - lvgl.widget.hide: temp_climate_1
+                  - lvgl.widget.hide: icon_climate_1
+                  - lvgl.widget.hide: but_climate_1
 
   - id: draw_display
     then:
@@ -2479,33 +2683,80 @@ script:
             - lvgl.widget.hide: digital
       - if:
           condition:
+            - lambda: 'return std::string("${screensaver_next_alarmclock}") == "true" && (id(alarmclock).state || id(alarmclock2).state);'
+          then:
+            - lvgl.widget.show: next_alarmclock_obj
+            - lvgl.label.update:
+                id: next_alarmclock_label
+                text: !lambda |-
+                  auto now = id(ha_time).now();
+                  const int current_minutes = now.hour * 60 + now.minute;
+                  int next_alarm_minutes = 1440 * 2;
+
+                  if (id(alarmclock).state) {
+                    int alarm_minutes = id(alarmclock_time).hour * 60 + id(alarmclock_time).minute;
+                    if (alarm_minutes <= current_minutes) {
+                      alarm_minutes += 1440;
+                    }
+                    next_alarm_minutes = alarm_minutes;
+                  }
+
+                  if (id(alarmclock2).state) {
+                    int alarm_minutes = id(alarmclock2_time).hour * 60 + id(alarmclock2_time).minute;
+                    if (alarm_minutes <= current_minutes) {
+                      alarm_minutes += 1440;
+                    }
+                    if (alarm_minutes < next_alarm_minutes) {
+                      next_alarm_minutes = alarm_minutes;
+                    }
+                  }
+
+                  const int display_minutes = next_alarm_minutes % 1440;
+                  const int display_hour = display_minutes / 60;
+                  const int display_minute = display_minutes % 60;
+                  char buffer[12];
+
+                  if (id(time_format).current_option() == "24 Hr") {
+                    sprintf(buffer, "%02d:%02d", display_hour, display_minute);
+                  } else {
+                    int hour_12 = display_hour % 12;
+                    if (hour_12 == 0) {
+                      hour_12 = 12;
+                    }
+                    sprintf(buffer, "%d:%02d %s", hour_12, display_minute, display_hour >= 12 ? "PM" : "AM");
+                  }
+                  return std::string(buffer);
+          else:
+            - lvgl.widget.hide: next_alarmclock_obj
+      - if:
+          condition:
             or:
               - and:
                   - switch.is_on: alarmclock
                   - lambda: 'return (id(ha_time).now().hour == id(alarmclock_time).hour);'
                   - lambda: 'return (id(ha_time).now().minute == id(alarmclock_time).minute);'
-                  - lambda: 'return (id(ha_time).now().second <= 15);'
+                  - lambda: 'return (id(ha_time).now().second <= 5);'
               - and:
                   - switch.is_on: alarmclock2
                   - lambda: 'return (id(ha_time).now().hour == id(alarmclock2_time).hour);'
                   - lambda: 'return (id(ha_time).now().minute == id(alarmclock2_time).minute);'
-                  - lambda: 'return (id(ha_time).now().second <= 15);'
+                  - lambda: 'return (id(ha_time).now().second <= 5);'
           then:
             - lambda: id(alarmclock_ringing) = true;
             - lvgl.widget.show: but_snooze
             - lambda: id(voice_assistant_phase) = ${voice_assist_timer_finished_phase_id};
             - script.execute: draw_display
             - switch.turn_on: timer_ringing
-            - delay: 15s
+            - delay: 6s
       - if:
           condition:
             and:
               - switch.is_on: reboot_schedule
               - lambda: 'return (id(ha_time).now().hour == id(reboot_time).hour);'
               - lambda: 'return (id(ha_time).now().minute == id(reboot_time).minute);'
-              - lambda: 'return (id(ha_time).now().second <= 15);'
+              - lambda: 'return (id(ha_time).now().second <= 10);'
           then:
-            - delay: 10s
+            - delay: 11s
             - button.press: reboot
     mode: single
     
@@ -3004,7 +3255,6 @@ switch:
       - lambda: id(voice_assistant_phase) = ${voice_assist_muted_phase_id};
       - lvgl.label.update:
           id: lbl_mic
-          text_color: 0xFF0000
           text: !lambda |-
               static char buf[10];
               std::string icon;
@@ -3353,32 +3603,32 @@ select:
     on_value:
       lambda: |-
         if (x == "Slightly sensitive") {
-          id(okay_nabu).set_probability_cutoff(247);    // 0.97
-          id(hey_jarvis).set_probability_cutoff(247);   // 0.97 -> 0.563 FAPH on DipCo (Manifest's default)
-          id(hey_mycroft).set_probability_cutoff(253);  // 0.99 -> 0.567 FAPH on DipCo
-          id(alexa).set_probability_cutoff(250);  // 0.98
-          //id(okay_computer).set_probability_cutoff(247);
-          //id(hey_home_assistant).set_probability_cutoff(247);
-          id(okay_hal).set_probability_cutoff(247);
-          id(hey_luna).set_probability_cutoff(247);
+          id(okay_nabu).set_probability_cutoff(${va_model_sensitivity_okay_nabu_low});
+          id(hey_jarvis).set_probability_cutoff(${va_model_sensitivity_hey_jarvis_low});
+          id(hey_mycroft).set_probability_cutoff(${va_model_sensitivity_hey_mycroft_low});
+          id(alexa).set_probability_cutoff(${va_model_sensitivity_alexa_low});
+          // id(okay_computer).set_probability_cutoff(${va_model_sensitivity_okay_computer_low});
+          // id(hey_home_assistant).set_probability_cutoff(${va_model_sensitivity_hey_home_assistant_low});
+          id(okay_hal).set_probability_cutoff(${va_model_sensitivity_okay_hal_low});
+          id(hey_luna).set_probability_cutoff(${va_model_sensitivity_hey_luna_low});
         } else if (x == "Moderately sensitive") {
-          id(okay_nabu).set_probability_cutoff(176);    // 0.69 -> 0.376 FAPH on DipCo
-          id(hey_jarvis).set_probability_cutoff(235);   // 0.92 -> 0.939 FAPH on DipCo
-          id(hey_mycroft).set_probability_cutoff(242);  // 0.95 -> 1.502 FAPH on DipCo (Manifest's default)
-          id(alexa).set_probability_cutoff(235); // 0.92
-          //id(okay_computer).set_probability_cutoff(235);
-          //id(hey_home_assistant).set_probability_cutoff(235);
-          id(okay_hal).set_probability_cutoff(235);
-          id(hey_luna).set_probability_cutoff(235);
+          id(okay_nabu).set_probability_cutoff(${va_model_sensitivity_okay_nabu_medium});
+          id(hey_jarvis).set_probability_cutoff(${va_model_sensitivity_hey_jarvis_medium});
+          id(hey_mycroft).set_probability_cutoff(${va_model_sensitivity_hey_mycroft_medium});
+          id(alexa).set_probability_cutoff(${va_model_sensitivity_alexa_medium});
+          // id(okay_computer).set_probability_cutoff(${va_model_sensitivity_okay_computer_medium});
+          // id(hey_home_assistant).set_probability_cutoff(${va_model_sensitivity_hey_home_assistant_medium});
+          id(okay_hal).set_probability_cutoff(${va_model_sensitivity_okay_hal_medium});
+          id(hey_luna).set_probability_cutoff(${va_model_sensitivity_hey_luna_medium});
         } else if (x == "Very sensitive") {
-          id(okay_nabu).set_probability_cutoff(143);    // 0.56 -> 0.751 FAPH on DipCo
-          id(hey_jarvis).set_probability_cutoff(212);   // 0.83 -> 1.502 FAPH on DipCo
-          id(hey_mycroft).set_probability_cutoff(237);  // 0.93 -> 1.878 FAPH on DipCo
-          id(alexa).set_probability_cutoff(217); // 0.85
-          //id(okay_computer).set_probability_cutoff(212);
-          //id(hey_home_assistant).set_probability_cutoff(212);
-          id(okay_hal).set_probability_cutoff(212);
-          id(hey_luna).set_probability_cutoff(212);
+          id(okay_nabu).set_probability_cutoff(${va_model_sensitivity_okay_nabu_high});
+          id(hey_jarvis).set_probability_cutoff(${va_model_sensitivity_hey_jarvis_high});
+          id(hey_mycroft).set_probability_cutoff(${va_model_sensitivity_hey_mycroft_high});
+          id(alexa).set_probability_cutoff(${va_model_sensitivity_alexa_high});
+          // id(okay_computer).set_probability_cutoff(${va_model_sensitivity_okay_computer_high});
+          // id(hey_home_assistant).set_probability_cutoff(${va_model_sensitivity_hey_home_assistant_high});
+          id(okay_hal).set_probability_cutoff(${va_model_sensitivity_okay_hal_high});
+          id(hey_luna).set_probability_cutoff(${va_model_sensitivity_hey_luna_high});
         }
 
   - platform: lvgl
@@ -3669,6 +3919,10 @@ globals:
     type: int
     restore_value: false
     initial_value: ${voice_assist_not_ready_phase_id}
+  - id:  voice_assistant_reboot
+    type: int
+    restore_value: false
+    initial_value: ${ voice_assistant_failed_reboot}
   - id: wifi_connection
     type: bool
     restore_value: false
@@ -3750,8 +4004,9 @@ http_request:
   timeout: 30s
   watchdog_timeout: 60s
 
-online_image:
-  - url: ${loading_illustration_file}
+image:
+  - platform: online_image
+    url: ${loading_illustration_file}
     format: png
     resize: ${image_resize}
     type: RGB565
@@ -3805,60 +4060,163 @@ online_image:
       - lvgl.widget.hide: img_mc_art
       - lvgl.widget.hide: obj_mc_scrim
 
-image:
-## Default Images
-  defaults:
+  ## Default Images
+  - platform: file
     type: RGB565
     resize: ${image_resize}
     transparency: alpha_channel
     byte_order: ${image_byte_order}
-  images:
-    - file: ${error_illustration_file}
-      id: error_img
-  #  - file: ${idle_illustration_file}
-  #    id: idle_img
-    - file: ${listening_illustration_file}
-      id: listening_img
-    - file: ${thinking_illustration_file}
-      id: thinking_img
-    - file: ${replying_illustration_file}
-      id: replying_img
-    - file: ${loading_illustration_file}
-      id: loading_img
-  #  - file: ${timer_finished_illustration_file}
-  #    id: timer_finished_img
-  #  - file: ${logo_illustration_file}
-  #    id: logo_img
+    file: ${error_illustration_file}
+    id: error_img
+  # - platform: file
+    # type: RGB565
+    # resize: ${image_resize}
+    # transparency: alpha_channel
+    # byte_order: ${image_byte_order}
+    # file: {idle_illustration_file}
+    # id: idle_img
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${listening_illustration_file}
+    id: listening_img
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${thinking_illustration_file}
+    id: thinking_img
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${replying_illustration_file}
+    id: replying_img
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${loading_illustration_file}
+    id: loading_img
+  # - platform: file
+    # type: RGB565
+    # resize: ${image_resize}
+    # transparency: alpha_channel
+    # byte_order: ${image_byte_order}
+    # file: ${timer_finished_illustration_file}
+    # id: timer_finished_img
+  # - platform: file
+    # type: RGB565
+    # resize: ${image_resize}
+    # transparency: alpha_channel
+    # byte_order: ${image_byte_order}
+    # file: ${logo_illustration_file}
+    # id: logo_img
   ## HAL Animated Voice Assistant images
-    - file: ${anim_listening1}
-      id: anim_listening1
-    - file: ${anim_listening2}
-      id: anim_listening2
-    - file: ${anim_thinking1}
-      id: anim_thinking1
-    - file: ${anim_thinking2}
-      id: anim_thinking2
-    - file: ${anim_replying1}
-      id: anim_replying1
-    - file: ${anim_replying2}
-      id: anim_replying2
-    - file: ${anim_error1}
-      id: anim_error1
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_listening1}
+    id: anim_listening1
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_listening2}
+    id: anim_listening2
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_thinking1}
+    id: anim_thinking1
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_thinking2}
+    id: anim_thinking2
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_replying1}
+    id: anim_replying1
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_replying2}
+    id: anim_replying2
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim_error1}
+    id: anim_error1
   ## HOME Animated Voice Assistant images
-    - file: ${anim2_listening}
-      id: anim2_listening
-    - file: ${anim2_thinking}
-      id: anim2_thinking
-    - file: ${anim2_replying1}
-      id: anim2_replying1
-    - file: ${anim2_replying2}
-      id: anim2_replying2
-    - file: ${anim2_replying3}
-      id: anim2_replying3
-    - file: ${anim2_replying4}
-      id: anim2_replying4
-    - file: ${anim2_error}
-      id: anim2_error
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_listening}
+    id: anim2_listening
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_thinking}
+    id: anim2_thinking
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_replying1}
+    id: anim2_replying1
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_replying2}
+    id: anim2_replying2
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_replying3}
+    id: anim2_replying3
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_replying4}
+    id: anim2_replying4
+  - platform: file
+    type: RGB565
+    resize: ${image_resize}
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    file: ${anim2_error}
+    id: anim2_error
 
 font:
   - file: ${font_file}
@@ -4037,7 +4395,15 @@ font:
       - "\U000F00AC"# blinds closed
       - "\U000F1A6B"# roller-shade open
       - "\U000F1A6C"# roller-shade closed
+      - "\U000F0CE1"# arrow-up-bold-circle
+      - "\U000F0047"# arrow-down-bold-circle
       
+  - file: ${icon_font_file}
+    id: icon_font
+    size: 22
+    bpp: ${font_icon_bpp}
+    glyphs: *icon_glyphs
+
   - file: ${icon_font_file}
     id: iconfont_small
     size: 30
@@ -4057,6 +4423,147 @@ font:
     glyphs: *icon_glyphs
 
 text_sensor:
+  - platform: homeassistant
+    id: cover1_state
+    entity_id: ${cover1_entity}
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x != "unknown" && x != "unavailable";
+          then:
+            - lvgl.widget.show: cover1_name_label
+            - lvgl.widget.show: cover1_up_button
+            - lvgl.widget.show: cover1_status_button
+            - lvgl.widget.show: cover1_down_button
+      - lvgl.label.update:
+          id: cover1_status
+          text: !lambda |-
+            if (x == "opening" || x == "closing") return std::string("STOP");
+            char buffer[8];
+            snprintf(buffer, sizeof(buffer), "%.0f%%", id(cover1_position).state);
+            return std::string(buffer);
+      - if:
+          condition:
+            lambda: return x == "opening";
+          then:
+            - lvgl.widget.update:
+                id: cover1_up_button
+                state:
+                  checked: true
+          else:
+            - lvgl.widget.update:
+                id: cover1_up_button
+                state:
+                  checked: false
+      - if:
+          condition:
+            lambda: return x == "closing";
+          then:
+            - lvgl.widget.update:
+                id: cover1_down_button
+                state:
+                  checked: true
+          else:
+            - lvgl.widget.update:
+                id: cover1_down_button
+                state:
+                  checked: false
+
+  - platform: homeassistant
+    id: cover2_state
+    entity_id: ${cover2_entity}
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x != "unknown" && x != "unavailable";
+          then:
+            - lvgl.widget.show: cover2_name_label
+            - lvgl.widget.show: cover2_up_button
+            - lvgl.widget.show: cover2_status_button
+            - lvgl.widget.show: cover2_down_button
+      - lvgl.label.update:
+          id: cover2_status
+          text: !lambda |-
+            if (x == "opening" || x == "closing") return std::string("STOP");
+            char buffer[8];
+            snprintf(buffer, sizeof(buffer), "%.0f%%", id(cover2_position).state);
+            return std::string(buffer);
+      - if:
+          condition:
+            lambda: return x == "opening";
+          then:
+            - lvgl.widget.update:
+                id: cover2_up_button
+                state:
+                  checked: true
+          else:
+            - lvgl.widget.update:
+                id: cover2_up_button
+                state:
+                  checked: false
+      - if:
+          condition:
+            lambda: return x == "closing";
+          then:
+            - lvgl.widget.update:
+                id: cover2_down_button
+                state:
+                  checked: true
+          else:
+            - lvgl.widget.update:
+                id: cover2_down_button
+                state:
+                  checked: false
+
+  - platform: homeassistant
+    id: cover3_state
+    entity_id: ${cover3_entity}
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x != "unknown" && x != "unavailable";
+          then:
+            - lvgl.widget.show: cover3_name_label
+            - lvgl.widget.show: cover3_up_button
+            - lvgl.widget.show: cover3_status_button
+            - lvgl.widget.show: cover3_down_button
+      - lvgl.label.update:
+          id: cover3_status
+          text: !lambda |-
+            if (x == "opening" || x == "closing") return std::string("STOP");
+            char buffer[8];
+            snprintf(buffer, sizeof(buffer), "%.0f%%", id(cover3_position).state);
+            return std::string(buffer);
+      - if:
+          condition:
+            lambda: return x == "opening";
+          then:
+            - lvgl.widget.update:
+                id: cover3_up_button
+                state:
+                  checked: true
+          else:
+            - lvgl.widget.update:
+                id: cover3_up_button
+                state:
+                  checked: false
+      - if:
+          condition:
+            lambda: return x == "closing";
+          then:
+            - lvgl.widget.update:
+                id: cover3_down_button
+                state:
+                  checked: true
+          else:
+            - lvgl.widget.update:
+                id: cover3_down_button
+                state:
+                  checked: false
+
   - platform: template
     name: "Config Version"
     icon: mdi:home-assistant
@@ -4196,7 +4703,7 @@ text_sensor:
                 long_mode: SCROLL_CIRCULAR
             - lambda: |-
                 lv_obj_set_style_anim_time(id(lbl_v_text_response), id(text_response).state.length()*125, LV_PART_MAIN);
-            - lambda: id(voice_assistant_timeout) = 10000 + (id(text_response).state.length()*125);
+            - lambda: id(voice_assistant_timeout) = 120000 + (id(text_response).state.length()*200);
           else:
             - lvgl.label.update:
                 id: lbl_v_text_response
@@ -4604,67 +5111,76 @@ text_sensor:
 
 ### CLIMATE PAGE TEXT SENSORS ###
   - platform: homeassistant
-    id: climate1_item
+    id: climate1_item_sensor
     entity_id: ${climate1_entity}
     internal: true
     on_value:
       then:
+        - script.execute: refresh_climate_1
+
+  - platform: homeassistant
+    id: climate1_item_ac
+    entity_id: ${climate1_entity_ac}
+    internal: true
+    on_value:
+      then:
+        - script.execute: refresh_climate_1
         - if:
             condition: 
-                lambda: return (id(climate1_item).state == "off");
+                lambda: return (id(climate1_item_ac).state == "off");
             then:
               - lvgl.dropdown.update:
-                  id: dropdown_studioacmode
+                  id: dropdown_climateacmode
                   selected_index: 0
               - lvgl.widget.update:
                   id: but_climate_1
                   state:
                     checked: false
               - lvgl.widget.update:
-                  id: but_studioac_1
+                  id: but_climateac_1
                   state:
                     checked: false
         - if:
             condition: 
                 and:
-                  - lambda: return (id(climate1_item).state != "off");
-                  - lambda: return (id(climate1_item).state != "unavailable");
+                  - lambda: return (id(climate1_item_ac).state != "off");
+                  - lambda: return (id(climate1_item_ac).state != "unavailable");
             then:
               - lvgl.widget.update:
                   id: but_climate_1
                   state:
                     checked: true
               - lvgl.widget.update:
-                  id: but_studioac_1
+                  id: but_climateac_1
                   state:
                     checked: true
               - if:
                   condition:
-                    lambda: return (id(climate1_item).state == "heat_cool");
+                    lambda: return (id(climate1_item_ac).state == "heat_cool");
                   then:
                     - lvgl.dropdown.update:
-                        id: dropdown_studioacmode
+                        id: dropdown_climateacmode
                         selected_index: 1
               - if:
                   condition:
-                    lambda: return (id(climate1_item).state == "heat");
+                    lambda: return (id(climate1_item_ac).state == "heat");
                   then:
                     - lvgl.dropdown.update:
-                        id: dropdown_studioacmode
+                        id: dropdown_climateacmode
                         selected_index: 2
               - if:
                   condition:
-                    lambda: return (id(climate1_item).state == "cool");
+                    lambda: return (id(climate1_item_ac).state == "cool");
                   then:
                     - lvgl.dropdown.update:
-                        id: dropdown_studioacmode
+                        id: dropdown_climateacmode
                         selected_index: 3
               - if:
                   condition:
-                    lambda: return (id(climate1_item).state == "dry");
+                    lambda: return (id(climate1_item_ac).state == "dry");
                   then:
                     - lvgl.dropdown.update:
-                        id: dropdown_studioacmode
+                        id: dropdown_climateacmode
                         selected_index: 4
         # Sensor mode (slot 1 index > climate_hvac_count): the entity is a plain temp
         # sensor whose state is the temperature -> show a read-only card, hide button.
@@ -5819,44 +6335,56 @@ lvgl:
                         grid_cell_row_pos: 1
                         grid_cell_x_align: STRETCH
                         grid_cell_y_align: STRETCH
-                    - button:
-                        id: but_climate_1
-                        hidden: true
-                        styles: button_style
-                        pressed:
-                          styles: button_pressed_style
-                        checked:
-                          styles: button_checked_style
+                    - obj:
                         grid_cell_column_pos: 0
                         grid_cell_row_pos: 2
                         grid_cell_x_align: STRETCH
                         grid_cell_y_align: STRETCH
-                        checkable: true
+                        pad_all: 0
+                        bg_opa: TRANSP
+                        border_opa: TRANSP
                         widgets:
-                          - label:
-                              id: ico_climate_1
+                          - button:
+                              id: but_climate_1
+                              hidden: true
+                              width: 100%
+                              height: 100%
                               align: CENTER
-                              text_font: icon_font_30
-                              text: "\U000F0210"
-                        on_long_press:
-                          then:
-                            # Only open the HVAC control page if this slot is an HVAC
-                            # unit (index <= climate_hvac_count); sensor tiles do nothing.
-                            - if:
-                                condition:
-                                  lambda: 'return (1 <= ${climate_hvac_count});'
+                              styles: button_style
+                              pressed:
+                                styles: button_pressed_style
+                              checked:
+                                styles: button_checked_style
+                              checkable: true
+                              widgets:
+                                - label:
+                                    id: ico_climate_1
+                                    align: CENTER
+                                    text_font: icon_font_30
+                                    text: "\U000F0210"
+                              on_long_press:
                                 then:
-                                  - lvgl.page.show: climate_studio_page
+                                  - lvgl.page.show: climate_ac_page
                                   - delay: 1s
                                   - if:
                                       condition:
                                         not:
-                                          lambda: return (id(climate1_item).state == "off");
+                                          lambda: return (id(climate1_item_ac).state == "off");
                                       then:
                                         - lvgl.widget.update:
                                             id: but_climate_1
                                             state:
                                               checked: true
+                          - label:
+                              id: icon_climate_1
+                              hidden: true
+                              width: 100%
+                              height: 100%
+                              align: CENTER
+                              text_align: CENTER
+                              text_font: icon_font_30
+                              text: "\U000F050F"
+                              styles: label_text_color_blue
                     - label:
                         id: lbl_climate_2
                         hidden: true
@@ -6076,7 +6604,7 @@ lvgl:
                         grid_cell_x_align: STRETCH
                         grid_cell_y_align: STRETCH
 
-    - id: climate_studio_page
+    - id: climate_ac_page
       skip: true
       # Read the unit's current mode/on-state when the page opens (the climateN_item
       # on_value only fires on change, so a fresh open would otherwise show stale "off").
@@ -6084,66 +6612,66 @@ lvgl:
         then:
           # Default to Off, then override from the unit's current state.
           - lvgl.dropdown.update:
-              id: dropdown_studioacmode
+              id: dropdown_climateacmode
               selected_index: 0
           - if:
               condition:
-                lambda: 'return (id(climate1_item).state == "heat_cool");'
+                lambda: 'return (id(climate1_item_ac).state == "heat_cool");'
               then:
                 - lvgl.dropdown.update:
-                    id: dropdown_studioacmode
+                    id: dropdown_climateacmode
                     selected_index: 1
           - if:
               condition:
-                lambda: 'return (id(climate1_item).state == "heat");'
+                lambda: 'return (id(climate1_item_ac).state == "heat");'
               then:
                 - lvgl.dropdown.update:
-                    id: dropdown_studioacmode
+                    id: dropdown_climateacmode
                     selected_index: 2
           - if:
               condition:
-                lambda: 'return (id(climate1_item).state == "cool");'
+                lambda: 'return (id(climate1_item_ac).state == "cool");'
               then:
                 - lvgl.dropdown.update:
-                    id: dropdown_studioacmode
+                    id: dropdown_climateacmode
                     selected_index: 3
           - if:
               condition:
-                lambda: 'return (id(climate1_item).state == "dry");'
+                lambda: 'return (id(climate1_item_ac).state == "dry");'
               then:
                 - lvgl.dropdown.update:
-                    id: dropdown_studioacmode
+                    id: dropdown_climateacmode
                     selected_index: 4
           - if:
               condition:
-                lambda: 'return (id(climate1_item).state != "off" && id(climate1_item).state != "unavailable");'
+                lambda: 'return (id(climate1_item_ac).state != "off" && id(climate1_item_ac).state != "unavailable");'
               then:
                 - lvgl.widget.update:
-                    id: but_studioac_1
+                    id: but_climateac_1
                     state:
                       checked: true
               else:
                 - lvgl.widget.update:
-                    id: but_studioac_1
+                    id: but_climateac_1
                     state:
                       checked: false
           # Pull the live current (room) temp + target so opening the page shows real
           # values instead of stale ones (the sensors' on_value only fire on change).
           - lvgl.label.update:
-              id: studioac_currenttemp
+              id: climateac_currenttemp
               text: !lambda |-
                 char buf[10];
-                sprintf(buf, "%.1f%s", id(climate1_temp).state, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
+                sprintf(buf, "%.1f%s", id(climate1_temp_ac).state, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
                 return buf;
           - lvgl.label.update:
-              id: studioac_targettemp
+              id: climateac_targettemp
               text: !lambda |-
                 char buf[10];
-                sprintf(buf, "%.1f%s", id(climate1_temp2).state, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
+                sprintf(buf, "%.1f%s", id(climate1_temp2_ac).state, id(temp_unit).current_option() == "Fahrenheit" ? "°F" : "°C");
                 return buf;
           - lvgl.spinbox.update:
-              id: spinbox_studioac
-              value: !lambda 'return id(climate1_temp2).state;'
+              id: spinbox_climateac
+              value: !lambda 'return id(climate1_temp2_ac).state;'
       widgets:
         - obj:
             styles: page_content
@@ -6182,7 +6710,7 @@ lvgl:
                         grid_cell_x_align: STRETCH
                         grid_cell_y_align: STRETCH
                     - button:
-                        id: but_studioac_1
+                        id: but_climateac_1
                         styles: button_style
                         pressed:
                           styles: button_pressed_style
@@ -6195,7 +6723,7 @@ lvgl:
                         checkable: true
                         widgets:
                           - label:
-                              id: ico_studioac_1
+                              id: ico_climateac_1
                               align: CENTER
                               text_font: icon_font_55
                               text: "\U000F0210"
@@ -6204,7 +6732,7 @@ lvgl:
                             - homeassistant.action:
                                 action: climate.toggle
                                 data:
-                                  entity_id: ${climate1_entity}
+                                  entity_id: ${climate1_entity_ac}
                     - label:
                         text: "Current Temp"
                         align: CENTER
@@ -6216,7 +6744,7 @@ lvgl:
                         grid_cell_y_align: STRETCH
                     - label:
                         text: " "
-                        id: studioac_currenttemp
+                        id: climateac_currenttemp
                         align: CENTER
                         text_align: CENTER
                         styles: label_text_color_blue
@@ -6236,7 +6764,7 @@ lvgl:
                         grid_cell_y_align: STRETCH
                     - label:
                         text: " "
-                        id: studioac_targettemp
+                        id: climateac_targettemp
                         align: CENTER
                         text_align: CENTER
                         styles: label_text_color_blue
@@ -6260,7 +6788,7 @@ lvgl:
                     flex_align_cross: CENTER
                   widgets:
                     - dropdown:
-                        id: dropdown_studioacmode
+                        id: dropdown_climateacmode
                         styles: dropdown_style
                         width: 180
                         text_align: CENTER
@@ -6282,7 +6810,7 @@ lvgl:
                                 - homeassistant.action:
                                     action: climate.set_hvac_mode
                                     data:
-                                      entity_id: ${climate1_entity}
+                                      entity_id: ${climate1_entity_ac}
                                       hvac_mode: "off"
                           - if:
                               condition:
@@ -6291,7 +6819,7 @@ lvgl:
                                 - homeassistant.action:
                                     action: climate.set_hvac_mode
                                     data:
-                                      entity_id: ${climate1_entity}
+                                      entity_id: ${climate1_entity_ac}
                                       hvac_mode: heat_cool
                           - if:
                               condition:
@@ -6300,7 +6828,7 @@ lvgl:
                                 - homeassistant.action:
                                     action: climate.set_hvac_mode
                                     data:
-                                      entity_id: ${climate1_entity}
+                                      entity_id: ${climate1_entity_ac}
                                       hvac_mode: heat
                           - if:
                               condition:
@@ -6309,8 +6837,8 @@ lvgl:
                                 - homeassistant.action:
                                     action: climate.set_hvac_mode
                                     data:
-                                      entity_id: ${climate1_entity}
-                                      hvac_mode: cool
+                                      entity_id: ${climate1_entity_ac}
+                                      hvac_mode: Cool
                           - if:
                               condition:
                                 lambda: return (x == 4);
@@ -6318,10 +6846,10 @@ lvgl:
                                 - homeassistant.action:
                                     action: climate.set_hvac_mode
                                     data:
-                                      entity_id: ${climate1_entity}
+                                      entity_id: ${climate1_entity_ac}
                                       hvac_mode: dry
                     - button:
-                        id: studioac_spin_down
+                        id: climateac_spin_down
                         styles: button_style
                         width: 100
                         height: 60
@@ -6329,23 +6857,28 @@ lvgl:
                           styles: button_pressed_style
                         checked:
                           styles: button_checked_style
-                        on_click:
-                          - lambda: |-
-                              int v = lv_spinbox_get_value(id(spinbox_studioac)) - 10;
-                              if (v < 160) v = 160;
-                              lv_spinbox_set_value(id(spinbox_studioac), v);
-                          - homeassistant.action:
-                              action: climate.set_temperature
-                              data:
-                                entity_id: ${climate1_entity}
-                                temperature: !lambda |-
-                                  return lv_spinbox_get_value(id(spinbox_studioac)) / 10.0f;
+                        on_short_click:
+                          - lvgl.spinbox.decrement: spinbox_climateac
+                        on_long_press_repeat:
+                          - lvgl.spinbox.decrement: spinbox_climateac
+                          - delay: 1s
+                        on_long_press:
+                          then:
+                            - delay: 250ms
+                            - homeassistant.action:
+                                action: climate.set_temperature
+                                data:
+                                  entity_id: ${climate1_entity_ac}
+                                  temperature: !lambda |-
+                                    int scaled_value = lv_spinbox_get_value(id(spinbox_climateac));
+                                    float actual_value = scaled_value / 10.0f;
+                                    return actual_value;
                         widgets:
                           - label:
                                text: "\U000F0B26"
                                styles: spinbox_button_label_style
                     - spinbox:
-                        id: spinbox_studioac
+                        id: spinbox_climateac
                         styles: spinbox_style
                         width: 200
                         range_from: 16
@@ -6359,7 +6892,7 @@ lvgl:
                           opa: TRANSP
                           bg_opa: TRANSP
                     - button:
-                        id: studioac_spin_up
+                        id: climateac_spin_up
                         styles: button_style
                         width: 100
                         height: 60
@@ -6367,17 +6900,22 @@ lvgl:
                           styles: button_pressed_style
                         checked:
                           styles: button_checked_style
-                        on_click:
-                          - lambda: |-
-                              int v = lv_spinbox_get_value(id(spinbox_studioac)) + 10;
-                              if (v > 310) v = 310;
-                              lv_spinbox_set_value(id(spinbox_studioac), v);
-                          - homeassistant.action:
-                              action: climate.set_temperature
-                              data:
-                                entity_id: ${climate1_entity}
-                                temperature: !lambda |-
-                                  return lv_spinbox_get_value(id(spinbox_studioac)) / 10.0f;
+                        on_short_click:
+                          - lvgl.spinbox.increment: spinbox_climateac
+                        on_long_press_repeat:
+                          - lvgl.spinbox.increment: spinbox_climateac
+                          - delay: 1s
+                        on_long_press:
+                          then:
+                            - delay: 250ms
+                            - homeassistant.action:
+                                action: climate.set_temperature
+                                data:
+                                  entity_id: ${climate1_entity_ac}
+                                  temperature: !lambda |-
+                                    int scaled_value = lv_spinbox_get_value(id(spinbox_climateac));
+                                    float actual_value = scaled_value / 10.0f;
+                                    return actual_value;
                         widgets:
                           - label:
                               text: "\U000F0B2C"
@@ -9992,6 +10530,289 @@ lvgl:
                                 data:
                                   entity_id: ${controls6_entity}
 
+    - id: cover_page
+      skip: ${cover_page_hide_from_navigation}
+      on_swipe_left:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.next:
+      on_swipe_right:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - lvgl.page.previous:
+      widgets:
+        - obj:
+            styles: page_content
+            widgets:
+              - obj:
+                  align: TOP_MID
+                  styles: header_footer
+                  widgets:
+                    - label:
+                        text: '${cover_page_title}'
+                        y: 3
+                        align: CENTER
+                        text_align: CENTER
+                        styles: label_text_color
+              - obj:
+                  align: CENTER
+                  width: 100%
+                  height: ${page_content_height}
+                  pad_all: 6
+                  bg_opa: TRANSP
+                  border_opa: TRANSP
+                  layout:
+                    pad_row: 6
+                    pad_column: 8
+                    type: GRID
+                    grid_columns: [FR(1), FR(1), FR(1)]
+                    grid_rows: [FR(10), FR(35), FR(20), FR(35)]
+                  widgets:
+                    - label:
+                        id: cover1_name_label
+                        hidden: true
+                        text: '${cover1_name}'
+                        align: CENTER
+                        text_align: CENTER
+                        styles: label_text_color
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                    - label:
+                        id: cover2_name_label
+                        hidden: true
+                        text: '${cover2_name}'
+                        align: CENTER
+                        text_align: CENTER
+                        styles: label_text_color
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                    - label:
+                        id: cover3_name_label
+                        hidden: true
+                        text: '${cover3_name}'
+                        align: CENTER
+                        text_align: CENTER
+                        styles: label_text_color
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                    - button:
+                        id: cover1_up_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        checkable: true
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover1_up_icon
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F0CE1"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.open
+                                data:
+                                  entity_id: ${cover1_entity}
+                    - button:
+                        id: cover2_up_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        checkable: true
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover2_up_icon
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F0CE1"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.open
+                                data:
+                                  entity_id: ${cover2_entity}
+                    - button:
+                        id: cover3_up_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        checkable: true
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover3_up_icon
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F0CE1"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.open
+                                data:
+                                  entity_id: ${cover3_entity}
+                    - button:
+                        id: cover1_status_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover1_status
+                              align: CENTER
+                              text: "--%"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.stop
+                                data:
+                                  entity_id: ${cover1_entity}
+                    - button:
+                        id: cover2_status_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover2_status
+                              align: CENTER
+                              text: "--%"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.stop
+                                data:
+                                  entity_id: ${cover2_entity}
+                    - button:
+                        id: cover3_status_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover3_status
+                              align: CENTER
+                              text: "--%"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.stop
+                                data:
+                                  entity_id: ${cover3_entity}
+                    - button:
+                        id: cover1_down_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        checkable: true
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover1_down_icon
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F0047"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.close
+                                data:
+                                  entity_id: ${cover1_entity}
+                    - button:
+                        id: cover2_down_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        checkable: true
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover2_down_icon
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F0047"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.close
+                                data:
+                                  entity_id: ${cover2_entity}
+                    - button:
+                        id: cover3_down_button
+                        hidden: true
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        checkable: true
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: cover3_down_icon
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F0047"
+                        on_long_press:
+                          then:
+                            - homeassistant.action:
+                                action: cover.close
+                                data:
+                                  entity_id: ${cover3_entity}
+
     - id: media_page
       skip: ${media_page_hide_from_navigation}
       on_swipe_left:
@@ -11583,6 +12404,35 @@ lvgl:
             text_font: labelfont_large
             x: -15
             y: -50
+        - obj:
+            id: next_alarmclock_obj
+            hidden: true
+            align: TOP_MID
+            styles: ssaver_style
+            bg_opa: TRANSP
+            border_opa: TRANSP
+            pad_all: 0
+            height: SIZE_CONTENT
+            width: SIZE_CONTENT
+            layout:
+              type: FLEX
+              flex_flow: ROW
+              flex_align_main: CENTER
+              flex_align_cross: CENTER
+            y: 100
+            widgets:
+              - label:
+                  id: next_alarmclock_icon
+                  text: "\U000F0020"
+                  text_align: CENTER
+                  styles: ssaver_style
+                  text_font: icon_font
+              - label:
+                  id: next_alarmclock_label
+                  text: " "
+                  text_align: CENTER
+                  styles: ssaver_style
+                  text_font: my_font
 
     - id: listening_page
       skip: true

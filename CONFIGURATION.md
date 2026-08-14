@@ -91,23 +91,27 @@ Hiding the page from navigation removes it from the navigation arrows and swipin
 ```
 
 Other pages that could be used out of the box on the home page are below:
-| Page | Use Case |
-| -------- | -------- |
-| climate_studio_page | Shows climate 1 Air Conditioner |
-| saver_page | Show Screensaver |
-| settings_page | Show Settings |
-| info_page | Show device information |
-| wifi_page | Show wifi information |
+| Page | Use Case | Suggested Icon
+| -------- | -------- | -------- |
+| climate_ac_page | Shows climate 1 Air Conditioner | "\U000F0210"
+| saver_page | Show Screensaver | "\U000F0150"
+| settings_page | Show Settings | "\U000F0493"
+| info_page | Show device information | "\U000F1C6F"
+| wifi_page | Show wifi information | "\U000F16BD"
+| cover_page | Shows and controls Covers | "\U000F00AC"
 
 ### Climate Page
-This is where you configure the name and the devices that will be displayed on the climate page. The climate1 entity is expected to be a climate device like an airconditioner and includes a detail page to allow setting the target temperature and HVAC Mode. All other entities are expected to be temperature sensors.
+This is where you configure the name and the devices that will be displayed on the climate page. 
+The first item on this page can be a temperature entity or an air conditioner control. If climate1_entity returns a valid state the temperature will display like all other climate items on this page. If climate1_entity_ac returns a valid state then it will override this and show it's temperature instead and a button to access the air conditioner page. 
+All other entities are expected to be temperature sensors.
 Hiding the page from navigation removes it from the navigation arrows and swiping.
 
 ```
   climate_page_title: "Climate"
   climate_page_hide_from_navigation: false
-  climate1_name: "Room 1 AC"
-  climate1_entity: climate.air_conditioner #climate
+  climate1_name: "Room 1"
+  climate1_entity: sensor.temperature1 #sensor
+  climate1_entity_ac: climate.air_conditioner #climate
   climate2_name: "Room 2"
   climate2_entity: sensor.temperature2 #sensor
   climate3_name: "Room 3"
@@ -177,6 +181,22 @@ Hiding the page from navigation removes it from the navigation arrows and swipin
   controls6_state: input_boolean.vacuum #status - switch,light,fan,cover,sensor,binary_sensor
   controls6_icon_off: "\U000F1C01" #icon from icon_glyphs
   controls6_icon_on: "\U000F070D" #icon from icon_glyphs
+```
+### Cover Page
+This is where you configure the name and the devices that will be displayed on the covers page.
+These can only be covers. 
+This page is not shown in the home menu by default but can be optionally visible.
+Hiding the page from navigation removes it from the navigation arrows and swiping.
+
+```
+  cover_page_title: "Covers"
+  cover_page_hide_from_navigation: true
+  cover1_name: "Cover 1"
+  cover1_entity: cover.cover1
+  cover2_name: "Cover 2"
+  cover2_entity: cover.cover2
+  cover3_name: "Cover 3"
+  cover3_entity: cover.cover3
 ```
 
 ### Media Page
@@ -256,7 +276,8 @@ Hiding the page from navigation removes it from the navigation arrows and swipin
 
 ### Screensaver Page
 When the screensaver is enabled the screensaver page can show the weather (top right), temperature (top left) and humidity (top left). If using the sensor dock the temperature and humidity from the device will be shown but other users can specify the custom temperature and humidify sensors. This allows showing both in and out temperatures on the screensaver page. 
-Additional lower left and lower right labels can be configured to show data from any other sensor. All entities support decimal places substitutions to allow configuration of the granularity of the number to be shown. 
+Additional lower left and lower right labels can be configured to show data from any other sensor. All entities support decimal places substitutions to allow configuration of the granularity of the number to be shown.
+The screensaver will show the next alarm clock time if one is enabled. This feature can be optionally disabled.
 
 ```
   screensaver_page_title: " "
@@ -272,6 +293,7 @@ Additional lower left and lower right labels can be configured to show data from
   screensaver_lower_right_entity: sensor.allergen_index #sensor
   screensaver_lower_right_dp: 0 #decimal places for lower right entity
   screensaver_lower_right_units: " IAI"
+  screensaver_next_alarmclock: "true"
 ```
 
 ### Alarm Clock Page
@@ -393,5 +415,130 @@ These substitutions specify the sounds to be used for on device or external audi
   notify_external: /local/sounds/notify.mp3
 ```
 
-### Other Configuration
-Other font information and hardware specific configuration is included in substitutions. You should not need to change these unless you are experiencing an issue or are looking to try this configuration on different hardware. 
+### Voice Assistant Wake Word Sensitivity
+These values control the thresholds used by the wake word sensitivity setting. They are preset with recommended defaults.
+The values are used for the probability cutoff threshold and require a quantized integer value (0 to 255) rather than a decimal percentage. Where specified the comments for thresholds indicate the associated percentage value. 
+The high sensitivity threshold is used for the "Very sensitive" option.
+The medium sensitivity threshold is used for the "Moderately sensitive" option.
+The low sensitivity threshold is used for the "Slightly sensitive" option.
+
+```
+###### Voice Assistant Model Sensitivity Thresholds ######
+  va_model_sensitivity_okay_nabu_high: 143 # 0.56
+  va_model_sensitivity_okay_nabu_medium: 176 # 0.69
+  va_model_sensitivity_okay_nabu_low: 247 # 0.97
+  va_model_sensitivity_hey_jarvis_high: 212 # 0.83
+  va_model_sensitivity_hey_jarvis_medium: 235 # 0.92
+  va_model_sensitivity_hey_jarvis_low: 247 # 0.97 (Manifest's default)
+  va_model_sensitivity_hey_mycroft_high: 237 # 0.93
+  va_model_sensitivity_hey_mycroft_medium: 242 # 0.95 (Manifest's default)
+  va_model_sensitivity_hey_mycroft_low: 253 # 0.99
+  va_model_sensitivity_alexa_high: 217 # 0.85
+  va_model_sensitivity_alexa_medium: 235 # 0.92
+  va_model_sensitivity_alexa_low: 250 # 0.98
+  va_model_sensitivity_okay_computer_high: 212
+  va_model_sensitivity_okay_computer_medium: 235
+  va_model_sensitivity_okay_computer_low: 247
+  va_model_sensitivity_hey_home_assistant_high: 212
+  va_model_sensitivity_hey_home_assistant_medium: 235
+  va_model_sensitivity_hey_home_assistant_low: 247
+  va_model_sensitivity_okay_hal_high: 212
+  va_model_sensitivity_okay_hal_medium: 235
+  va_model_sensitivity_okay_hal_low: 247
+  va_model_sensitivity_hey_luna_high: 212
+  va_model_sensitivity_hey_luna_medium: 235
+  va_model_sensitivity_hey_luna_low: 247
+```
+
+### Voice Assistant Phase IDs
+These are the voice assistant phase IDs used by Home Assistant/ESPHome and should not need changing.
+
+### Fonts & Icons
+This configuration should not need to change although you can add missing characters to font_glyphs to have them render correctly if they do not display. Changing font or icon font usually requires further changes.
+
+### Hardware Specific Configuration
+Most hardware specific configuration is best not changed but these options can be useful for different environments. 
+The wifi_fast_connect forces the device to immediately connect to the first available access point on boot. The wifi_power_save_mode controls how heavily the device manages power usage - this is important on battery powered devices. The wifi_native roaming determines whether ESPHome manages roaming (false) or your network uses 802.11v BSS Transition Management and 802.11k Radio Resource Management to determine the best access point (true).
+The voice_assistant_failed_reboot feature is a safety mechanism that reboots the device if the voice assistant hangs during responses. This is off by default but can be disabled if required.
+
+```
+  wifi_fast_connect: true
+  wifi_power_save_mode: NONE #NONE, LIGHT(default for esp32), HIGH
+  wifi_use_native_roaming: true #if false uses ESPHome post connect roaming
+  
+  voice_assistant_failed_reboot: "false" #restarts device on voice assistant hangs
+```
+
+## Beyond Substitutions
+
+### Micro Wake Word Models
+Micro Wake Word models for on device wake words cannot be controlled by substitutions.
+6 models (and a stop model) are implemented out of the box and 2 more are available as optional in the configuration. 
+Each model can consume additional storage so you may want to turn off unrequired models if enabling or adding more. 
+
+To configure the models changes must be specified in 2 places.
+The models are defined in the micro_wake_word component - You can uncomment or comment these here.
+
+```
+  models:
+    - model: okay_nabu
+      id: okay_nabu
+    - model: hey_mycroft
+      id: hey_mycroft
+    - model: hey_jarvis
+      id: hey_jarvis
+    - model: alexa
+      id: alexa
+    # experimental models
+    #- model: https://github.com/esphome/micro-wake-word-models/raw/main/models/v2/experiments/okay_computer.json
+    #  id: okay_computer
+    #- model: https://github.com/esphome/micro-wake-word-models/raw/main/models/v2/experiments/hey_home_assistant.json
+    #  id: hey_home_assistant
+    - model: https://github.com/chrisdunnname/esphome-s3-box-3-lvgl/raw/main/microwakeword/okay_hal.json
+      id: okay_hal
+    - model: https://github.com/chrisdunnname/esphome-s3-box-3-lvgl/raw/main/microwakeword/hey_luna.json
+      id: hey_luna
+    - model: https://github.com/kahrendt/microWakeWord/releases/download/stop/stop.json
+      id: stop
+      internal: true
+      probability_cutoff: 0.40  # default 0.5; sliding avg ~0.58 fires reliably
+      sliding_window_size: 3    # default 5; faster trigger
+```
+
+To control the sensitivity settings a lambda is defined under the Wake Word Sensitivity Template Select. 
+If you add additional models you do not need to add them to this lambda unless you do want to control sensitivity on the device.
+If you activate the default disabled models then you may want to uncomment the lines in this lambda to enable the sensitivity options for them. 
+If you disable any of the currently active models you will need to comment out the relevant lines from this lambda.
+
+```
+    on_value:
+      lambda: |-
+        if (x == "Slightly sensitive") {
+          id(okay_nabu).set_probability_cutoff(${va_model_sensitivity_okay_nabu_low});
+          id(hey_jarvis).set_probability_cutoff(${va_model_sensitivity_hey_jarvis_low});
+          id(hey_mycroft).set_probability_cutoff(${va_model_sensitivity_hey_mycroft_low});
+          id(alexa).set_probability_cutoff(${va_model_sensitivity_alexa_low});
+          // id(okay_computer).set_probability_cutoff(${va_model_sensitivity_okay_computer_low});
+          // id(hey_home_assistant).set_probability_cutoff(${va_model_sensitivity_hey_home_assistant_low});
+          id(okay_hal).set_probability_cutoff(${va_model_sensitivity_okay_hal_low});
+          id(hey_luna).set_probability_cutoff(${va_model_sensitivity_hey_luna_low});
+        } else if (x == "Moderately sensitive") {
+          id(okay_nabu).set_probability_cutoff(${va_model_sensitivity_okay_nabu_medium});
+          id(hey_jarvis).set_probability_cutoff(${va_model_sensitivity_hey_jarvis_medium});
+          id(hey_mycroft).set_probability_cutoff(${va_model_sensitivity_hey_mycroft_medium});
+          id(alexa).set_probability_cutoff(${va_model_sensitivity_alexa_medium});
+          // id(okay_computer).set_probability_cutoff(${va_model_sensitivity_okay_computer_medium});
+          // id(hey_home_assistant).set_probability_cutoff(${va_model_sensitivity_hey_home_assistant_medium});
+          id(okay_hal).set_probability_cutoff(${va_model_sensitivity_okay_hal_medium});
+          id(hey_luna).set_probability_cutoff(${va_model_sensitivity_hey_luna_medium});
+        } else if (x == "Very sensitive") {
+          id(okay_nabu).set_probability_cutoff(${va_model_sensitivity_okay_nabu_high});
+          id(hey_jarvis).set_probability_cutoff(${va_model_sensitivity_hey_jarvis_high});
+          id(hey_mycroft).set_probability_cutoff(${va_model_sensitivity_hey_mycroft_high});
+          id(alexa).set_probability_cutoff(${va_model_sensitivity_alexa_high});
+          // id(okay_computer).set_probability_cutoff(${va_model_sensitivity_okay_computer_high});
+          // id(hey_home_assistant).set_probability_cutoff(${va_model_sensitivity_hey_home_assistant_high});
+          id(okay_hal).set_probability_cutoff(${va_model_sensitivity_okay_hal_high});
+          id(hey_luna).set_probability_cutoff(${va_model_sensitivity_hey_luna_high});
+        }
+```
