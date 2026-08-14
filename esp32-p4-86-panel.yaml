@@ -4021,7 +4021,8 @@ image:
           value: ""
 
   # Album art for the local media player (JPEG from HA's media_player_proxy).
-  - url: ${loading_illustration_file}
+  - platform: online_image
+    url: ${loading_illustration_file}
     format: jpeg
     resize: ${album_art_resize}
     type: RGB565
@@ -4041,7 +4042,8 @@ image:
       - lvgl.widget.hide: obj_art_scrim
 
   # Album art for the Media Control page (follows the selected speaker).
-  - url: ${loading_illustration_file}
+  - platform: online_image
+    url: ${loading_illustration_file}
     format: jpeg
     resize: ${album_art_resize}
     type: RGB565
