@@ -14264,6 +14264,15 @@ lvgl:
       - buttonmatrix:
           align: bottom_mid
           styles: header_footer
+          # [FORK 2026-08-15] Bigger touch target for the nav bar (esp. the assist/mic
+          # button) — overrides header_footer's ${taskbar_height} (50) locally rather
+          # than changing the shared substitution, since that also drives every page's
+          # own title bar and page_content_height's math; didn't want to risk a
+          # layout regression across 18+ pages without being able to render/verify it.
+          # This DOES mean the bar now overlaps ~25px more of whatever page content
+          # sits at the very bottom of the screen than before — check visually after
+          # flashing.
+          height: 75
           pad_all: 0
           outline_width: 0
           id: top_layer
