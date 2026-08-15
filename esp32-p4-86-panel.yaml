@@ -12448,6 +12448,16 @@ lvgl:
       widgets:
         - obj:
             styles: page_content
+            # [FORK 2026-08-15] Tap anywhere on the listening/thinking/replying display
+            # to cancel the in-progress voice assistant session — mirrors the existing
+            # "stop" wake-word cancel action (mww on_wake_word_detected, ~L1496).
+            on_click:
+              then:
+                - if:
+                    condition:
+                      voice_assistant.is_running:
+                    then:
+                      - voice_assistant.stop:
             widgets:
               - image:
                   id: listening
