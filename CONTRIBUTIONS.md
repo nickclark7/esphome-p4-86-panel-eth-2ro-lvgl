@@ -39,10 +39,6 @@ whole diff.
 | 13 | **Bigger bottom nav bar + rebalanced page layout** | `top_layer` buttonmatrix height 50→75; all 17 content-grid pages switched `align: CENTER` → `TOP_MID` + `y: ${taskbar_height}`; `page_content_height` 600→575 | ✅ Yes — see in-file comments for the "why `TOP_MID`, not `CENTER`" reasoning if you resize the nav bar again |
 | 14 | **ETH-2RO relay control** | `relay1_pin`/`relay2_pin` substitutions (GPIO32/GPIO46 per Waveshare's wiki), two `switch: platform: gpio` entities, repurposed `controls_page` slots 2/3 for on-panel toggle buttons | ✅ Yes — only relevant if your board has the ETH-2RO expansion fitted |
 
-Not included on this branch: a bespoke "car page" (BYD Shark EV charging control) present
-in the maintainer's live personal config — dropped here as it's not generally reusable
-and references a specific vehicle integration.
-
 ---
 
 ## 2. Detail & rationale
