@@ -72,14 +72,15 @@ substitutions:
   controls1_entity: switch.kettle_start #switch,light,media_player,climate,fan,humidifier,cover,script,siren
   controls1_icon_off: "\U000F131B" #icon from icon_glyphs
   controls1_icon_on: "\U000F05FA" #icon from icon_glyphs
-  controls2_name: "Control 2"
-  controls2_entity: switch.switch2 #switch,light,media_player,climate,fan,humidifier,cover,script,siren
-  controls2_icon_off: "\U000F097E" #icon from icon_glyphs
-  controls2_icon_on: "\U000F097E" #icon from icon_glyphs
-  controls3_name: "Control 3"
-  controls3_entity: switch.switch3 #switch,light,media_player,climate,fan,humidifier,cover,script,siren
-  controls3_icon_off: "\U000F097E" #icon from icon_glyphs
-  controls3_icon_on: "\U000F097E" #icon from icon_glyphs
+  # [FORK 2026-08-28] repurposed for the ETH-2RO relay switches added above
+  controls2_name: "Relay 1"
+  controls2_entity: switch.esp32_p4_86_panel_relay_1 #switch,light,media_player,climate,fan,humidifier,cover,script,siren
+  controls2_icon_off: "\U000F0522" #mdi toggle-switch-off
+  controls2_icon_on: "\U000F0521" #mdi toggle-switch
+  controls3_name: "Relay 2"
+  controls3_entity: switch.esp32_p4_86_panel_relay_2 #switch,light,media_player,climate,fan,humidifier,cover,script,siren
+  controls3_icon_off: "\U000F0522" #mdi toggle-switch-off
+  controls3_icon_on: "\U000F0521" #mdi toggle-switch
   controls4_name: "Garage"
   controls4_entity: switch.garagedoorbutton #toggle - switch,light,media_player,climate,fan,humidifier,cover,script,siren
   controls4_state: binary_sensor.garagedoorstate #status - switch,light,fan,cover,sensor,binary_sensor
