@@ -39,6 +39,20 @@ Key Components:
 Optional:
 - Printed 86-Box: https://makerworld.com/en/models/475224-type-86-switch-desktop-base-123-gangs
 
+# This Fork
+
+This branch (`additional-features`) carries a personal fork's worth of features on top
+of upstream, kept in sync with the latest upstream revisions. Highlights: a
+voice-assistant wake-sound latency fix, a media picker with a second now-playing page,
+generic climate slots (HVAC or plain temperature sensor per slot), per-light detail
+pages with colour swatches for all 6 lights, a second home screen, tap-to-cancel on the
+voice assistant display, and ETH-2RO relay control (Home Assistant switches + on-panel
+buttons for the expansion board's two relays).
+
+Full feature list, what's re-usable, and the reasoning behind each change:
+[`CONTRIBUTIONS.md`](CONTRIBUTIONS.md). In-file additions are also marked with
+`[FORK]` comments. This is a personal fork published for reference — not a pull request.
+
 # Requirements
 Requires variants of [ESP32-P4-86-Panel-ETH-2RO](https://www.waveshare.com/wiki/ESP32-P4-86-Panel-ETH-2RO).
  Wifi is recommended over Ethernet and both models of this device are supported. Ethernet version is required to mount in x86 box.
