@@ -22,22 +22,22 @@ whole diff.
 
 ## 1. Feature summary
 
-| # | Feature | New IDs / substitutions | Re-usable? |
-|---|---------|-------------------------|------------|
-| 1 | **Voice-assistant wake-sound latency fix + assist-button music pause/resume** | `assist_button_pressed` script, `music_paused_by_assist` global, reworked `voice_assistant` `on_end`/`on_idle`/`on_play` handlers | ✅ Yes — broadly useful |
-| 2 | **Full-screen album art with smaller-resolution images** | `album_art_resize` substitution (256x256), `online_image`/`image` resize + LVGL `zoom`/`antialias` on `img_album_art` / `img_mc_art` | ✅ Yes |
-| 3 | **Media picker + second media page** | `media_control_page`, scripts `apply_media_target` / `refresh_np`, `sp1..8` sensors, `media_target1..8` subs | ✅ Yes — substitution-driven, genericised on this branch |
-| 4 | **`music_default_playlist` substitution** | `music_default_playlist` | ✅ Yes |
-| 5 | **Generic climate slots (HVAC *or* temperature sensor per slot)** | `climate_hvac_count` substitution; reworked `climateN_item` handlers + tiles | ✅ Yes — slot 1 now uses upstream's own `climate_ac_page` rework (merged 2026-08-15); slots 2/3 still run the original substitution-driven generic-slots design |
-| 6 | **Climate mode dropdown + current/target temp read-back on open** | `on_load` blocks on `climate_ac_page` / `climate_studio_page2` / `_page3` | ✅ Yes (bug fix) — ported onto upstream's new `climate_ac_page` widget ids for slot 1 during the 2026-08-15 merge |
-| 7 | **Per-light detail ("studio") pages for all 6 lights** | `light_studio_page` / `_page2..6` | ✅ Yes |
-| 8 | **Light reset presets** | `light_reset_hue` / `_sat` / `_kelvin` / `_brightness` substitutions + per-light reset button | ✅ Yes |
-| 9 | **Light colour swatches (all 6 lights)** | 12-swatch grid on `light_studio_page`/`_page2..6` (hs_color + color_temp_kelvin presets) replacing hue/sat sliders | ✅ Yes |
-| 10 | **Home Screen 2 (extra 6 launcher tiles)** | `home7..12_*` substitutions, `home_page_2_title`, `home_screen_2_hide_from_navigation` | ✅ Yes |
-| 11 | **Spinbox / rotary-knob cursor & reset-knob UI tweaks** | small edits to spinbox / encoder handlers | ✅ Yes (minor polish) |
-| 12 | **Tap listening/thinking/replying display to cancel voice assistant** | `on_click` on the 3 VA-state pages' root `obj`, guarded by `voice_assistant.is_running`, calls `voice_assistant.stop` (same action as the existing "stop" wake word) | ✅ Yes |
-| 13 | **Bigger bottom nav bar + rebalanced page layout** | `top_layer` buttonmatrix height 50→75; all 17 content-grid pages switched `align: CENTER` → `TOP_MID` + `y: ${taskbar_height}`; `page_content_height` 600→575 | ✅ Yes — see in-file comments for the "why `TOP_MID`, not `CENTER`" reasoning if you resize the nav bar again |
-| 14 | **ETH-2RO relay control** | `relay1_pin`/`relay2_pin` substitutions (GPIO32/GPIO46 per Waveshare's wiki), two `switch: platform: gpio` entities, repurposed `controls_page` slots 2/3 for on-panel toggle buttons | ✅ Yes — only relevant if your board has the ETH-2RO expansion fitted |
+| # | Feature | New IDs / substitutions |
+|---|---------|-------------------------|
+| 1 | **Voice-assistant wake-sound latency fix + assist-button music pause/resume** | `assist_button_pressed` script, `music_paused_by_assist` global, reworked `voice_assistant` `on_end`/`on_idle`/`on_play` handlers |
+| 2 | **Full-screen album art with smaller-resolution images** | `album_art_resize` substitution (256x256), `online_image`/`image` resize + LVGL `zoom`/`antialias` on `img_album_art` / `img_mc_art` |
+| 3 | **Media picker + second media page** | `media_control_page`, scripts `apply_media_target` / `refresh_np`, `sp1..8` sensors, `media_target1..8` subs — substitution-driven, genericised on this branch |
+| 4 | **`music_default_playlist` substitution** | `music_default_playlist` |
+| 5 | **Generic climate slots (HVAC *or* temperature sensor per slot)** | `climate_hvac_count` substitution; reworked `climateN_item` handlers + tiles. Slot 1 now uses upstream's own `climate_ac_page` rework (merged 2026-08-15); slots 2/3 still run the original substitution-driven generic-slots design |
+| 6 | **Climate mode dropdown + current/target temp read-back on open (bug fix)** | `on_load` blocks on `climate_ac_page` / `climate_studio_page2` / `_page3` — ported onto upstream's new `climate_ac_page` widget ids for slot 1 during the 2026-08-15 merge |
+| 7 | **Per-light detail ("studio") pages for all 6 lights** | `light_studio_page` / `_page2..6` |
+| 8 | **Light reset presets** | `light_reset_hue` / `_sat` / `_kelvin` / `_brightness` substitutions + per-light reset button |
+| 9 | **Light colour swatches (all 6 lights)** | 12-swatch grid on `light_studio_page`/`_page2..6` (hs_color + color_temp_kelvin presets) replacing hue/sat sliders |
+| 10 | **Home Screen 2 (extra 6 launcher tiles)** | `home7..12_*` substitutions, `home_page_2_title`, `home_screen_2_hide_from_navigation` |
+| 11 | **Spinbox / rotary-knob cursor & reset-knob UI tweaks (minor polish)** | small edits to spinbox / encoder handlers |
+| 12 | **Tap listening/thinking/replying display to cancel voice assistant** | `on_click` on the 3 VA-state pages' root `obj`, guarded by `voice_assistant.is_running`, calls `voice_assistant.stop` (same action as the existing "stop" wake word) |
+| 13 | **Bigger bottom nav bar + rebalanced page layout** | `top_layer` buttonmatrix height 50→75; all 17 content-grid pages switched `align: CENTER` → `TOP_MID` + `y: ${taskbar_height}`; `page_content_height` 600→575. See in-file comments for the "why `TOP_MID`, not `CENTER`" reasoning if you resize the nav bar again |
+| 14 | **ETH-2RO relay control** | `relay1_pin`/`relay2_pin` substitutions (GPIO32/GPIO46 per Waveshare's wiki), two `switch: platform: gpio` entities, repurposed `controls_page` slots 2/3 for on-panel toggle buttons — only relevant if your board has the ETH-2RO expansion fitted |
 
 ---
 
