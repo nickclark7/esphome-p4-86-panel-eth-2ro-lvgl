@@ -3190,6 +3190,26 @@ switch:
     entity_category: config
     disabled_by_default: true
 
+  # [FORK 2026-08-28] ETH-2RO expansion board relays (see relay1_pin/relay2_pin
+  # comment above). restore_mode ALWAYS_OFF chosen as the safe default for an
+  # unknown load — change to RESTORE_DEFAULT_ON/_OFF per-relay if what you wire
+  # up should hold its last state across a reboot instead.
+  - platform: gpio
+    name: Relay 1
+    id: relay_1
+    pin:
+      number: ${relay1_pin}
+    restore_mode: ALWAYS_OFF
+    icon: 'mdi:toggle-switch-outline'
+
+  - platform: gpio
+    name: Relay 2
+    id: relay_2
+    pin:
+      number: ${relay2_pin}
+    restore_mode: ALWAYS_OFF
+    icon: 'mdi:toggle-switch-outline'
+
   - platform: template
     name: Display conversation
     id: display_conversation
