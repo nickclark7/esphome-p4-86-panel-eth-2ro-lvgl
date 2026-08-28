@@ -323,6 +323,12 @@ substitutions:
   speaker_enable_pin: GPIO53
 
   side_button_pin: GPIO35
+
+  # [FORK 2026-08-28] ETH-2RO expansion board relays (Waveshare wiki §5.6.3:
+  # https://www.waveshare.com/wiki/ESP32-P4-86-Panel-ETH-2RO) — plain GPIO
+  # output, opto-isolated on the board itself, no special driver needed.
+  relay1_pin: GPIO32
+  relay2_pin: GPIO46
   
   # [FORK 2026-08-15] 600 -> 575: shrunk by exactly the bottom nav bar's growth
   # (taskbar_height 50->75) now that page content anchors TOP_MID + y:${taskbar_height}
