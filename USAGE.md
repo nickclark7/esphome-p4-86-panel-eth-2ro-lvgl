@@ -43,6 +43,9 @@ This guide details the available Home Assistant entities implemented with this d
 | Image URL | This entity allows you to push a fully qualified URL for a PNG image to the device which will display on screen for 30 seconds (with no notification sound). This can be used with a [JPG to PNG Converter](https://github.com/youkorr/hacs-jpg-to-png-converter) in an automation to capture a snapshot from a camera and push it to the device.|
 | LCD Backlight | Allows controlling the backlight for the device | 
 | Mute | Mutes the microphone on the device |
+| Media Control: Hide Speaker Select | Hides the speaker picker on the media page |
+| Media Control: Show Library Browser | Shows the Music Assistant library button on the media page (Music Assistant extras only) |
+| Media Control: Show Up Next | Shows the next track under the current one on the media page (Music Assistant extras only) |
 | Mute Reponses | Stops the voice assistant from playing TTS responses | 
 | Notification Sound | Enables a notification sound when a text notification is sent to the device | 
 | Output Audio Externally | Sends all audio to the specified external media player | 

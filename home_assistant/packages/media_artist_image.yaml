@@ -1,0 +1,51 @@
+# Fallback "artist photo" for the panel's media page when the
+# currently-playing track/album has no art of its own (confirmed live: MA's
+# entity_picture is entirely absent in that case — e.g. playing "A Dark Machine" by
+# ShockOne, whose album has no art, showed no entity_picture attribute at all, even
+# though the artist itself has a photo in Music Assistant's library data). Mirrors
+# media_next_track.yaml's response-service -> event -> trigger-sensor bridge, kept in
+# its own file for the same reason: isolate from the other proven pipelines.
+template:
+  - trigger:
+      - trigger: event
+        event_type: ma_artist_image_updated
+    sensor:
+      - name: "MA Artist Image"
+        unique_id: ma_artist_image_v1
+        state: "{{ trigger.event.data.image_url | default('', true) }}"
+        attributes:
+          for_artist: "{{ trigger.event.data.artist_name | default('') }}"
+
+script:
+  ma_refresh_artist_image:
+    alias: "MA: refresh artist image (fallback when no track/album art)"
+    mode: restart
+    fields:
+      target:
+        required: true
+      artist_name:
+        required: true
+    sequence:
+      - action: music_assistant.get_library
+        data:
+          config_entry_id: "{{ config_entry_id(target) }}"
+          media_type: artist
+          search: "{{ artist_name }}"
+          limit: 5
+        response_variable: artist_result
+      - variables:
+          # search is free-text and can return near-matches — only trust an
+          # EXACT (case/whitespace-insensitive) name match, not just "the first
+          # result", to avoid ever showing the wrong artist's photo.
+          image_url_raw: >
+            {% set ns = namespace(img='') %}
+            {% for a in artist_result['items'] | default([]) %}
+            {% if (a.name | trim | upper) == (artist_name | trim | upper) and ns.img == '' %}
+            {% set ns.img = a.image | default('', true) %}
+            {% endif %}
+            {% endfor %}
+            {{ ns.img }}
+      - action: python_script.ma_artist_image_fire_event
+        data:
+          artist_name: "{{ artist_name }}"
+          image_url: "{{ image_url_raw | trim }}"

@@ -116,16 +116,12 @@ Tap the change temperature buttons to move slightly or long press to change fast
 - This page provides controls for up to 3 covers showing the current position and any movement.
 
 # Media
-**Internal Audio**
 
 - The page title is configurable.
-- This is the default media view if external output is disabled but an optional toggle can be displayed to allow accessing the external audio view.
-- The volume controls on the media page control the volume of the S3 box including the Voice Assistant.
-
-**External Audio**
-
-![media](https://github.com/user-attachments/assets/693a625a-7cc2-4523-b6a3-f508334f3232)
-- This is the default media view if external output is enabled but an optional toggle can be displayed to allow accessing the internal audio view.
+- A speaker picker selects what the page controls: this panel, the external media player or up to six more speakers from Home Assistant. Turning on external audio output selects the external player.
+- Play/pause, previous/next, stop, volume and mute, with the current track's title, artist and full-screen album art.
+- Volume follows the selected speaker; for this panel it also controls the Voice Assistant volume.
+- Optional Music Assistant extras: a library browser, an "up next" line, an artist-photo fallback when a track has no art, and a default playlist for the play button. See CONFIGURATION.md.
 
 # Screens
 
