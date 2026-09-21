@@ -1,0 +1,37 @@
+# "Up Next" subtle track indicator on the panel's media page.
+# Mirrors music_library_browser.yaml's response-service -> event -> trigger-sensor
+# bridge, kept in its own file so the proven browse pipeline is never touched.
+template:
+  - trigger:
+      - trigger: event
+        event_type: ma_next_track_updated
+    sensor:
+      - name: "MA Next Track"
+        unique_id: ma_next_track_v1
+        state: "{{ trigger.event.data.next_title | default('') }}"
+
+script:
+  ma_refresh_next_track:
+    alias: "MA: refresh next-track display"
+    mode: restart
+    fields:
+      target:
+        required: true
+    sequence:
+      # Music Assistant's own next_item computation lags behind its
+      # current_index by ~1s after a track change (confirmed live: querying
+      # get_queue immediately after media_next_track shows next_item still
+      # equal to the track that JUST became current, settling to the real
+      # upcoming track between ~0.9s-1.2s later). Querying immediately produced
+      # a consistent one-step-behind "Next" display. mode: restart means a
+      # second track change before this delay elapses correctly cancels this
+      # call and restarts the wait for the newer change instead of stacking up.
+      - delay:
+          milliseconds: 1500
+      - action: music_assistant.get_queue
+        target:
+          entity_id: "{{ target }}"
+        response_variable: queue_result
+      - action: python_script.ma_next_track_fire_event
+        data:
+          next_title: "{{ queue_result[target].next_item.name if queue_result[target].next_item else '' }}"

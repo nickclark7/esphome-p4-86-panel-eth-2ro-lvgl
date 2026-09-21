@@ -213,13 +213,44 @@ Hiding the page from navigation removes it from the navigation arrows and swipin
 ```
 
 ### Media Page
-The media page does not require configuration and a different page will show depending on whether you are using on device or external audio. Here you can translate or change the page title.  Hiding the page from navigation removes it from the navigation arrows and swiping.  The media switcher is for users who want to be able to control both internal and external audio from the media page. When visible a button is added to the media_page to allow switching between the internal audio player and the external audio player irrespective of whether external audio output is enabled. 
+The media page controls a selected speaker: play/pause, previous/next, stop, volume and mute, with the current track's title, artist and album art. Here you can translate or change the page title. Hiding the page from navigation removes it from the navigation arrows and swiping.
 
 ```
   media_page_title: "Media"
   media_page_hide_from_navigation: false
-  media_page_hide_switcher: true
 ```
+
+**Speakers.** A dropdown at the top of the controls picks which speaker the page controls. Slot 1 is always this panel and slot 2 defaults to `external_media_player`; `media_target_count` sets how many slots are offered (1-8, the dropdown is hidden when it is 1). Turning on *Output Audio Externally* selects slot 2, turning it off selects slot 1. Volume and mute follow the selected speaker (mute is only offered for this panel).
+
+Leave `media_target1_entity` as `media_player.none` to control this panel's speaker directly on the device (play/pause, stop, volume). Set it to this panel's own media player entity in Home Assistant (for example the player Music Assistant creates for it) to also get titles, album art and previous/next.
+
+```
+  media_target_count: "2"
+  media_target1_name: "This Panel"
+  media_target1_entity: media_player.none
+  media_target2_name: "External"
+  media_target2_entity: media_player.${external_media_player}
+  media_target3_name: "Speaker 3"
+  media_target3_entity: media_player.none
+  # ... up to media_target8_name / media_target8_entity
+  album_art_resize: 256x256 # album art is downloaded at this size and scaled up to fill the screen
+```
+
+**Media settings.** Settings > Media (long press) has *Hide Speaker Selection*, the *Playback Device* picker and, with Music Assistant extras enabled, *Show Up Next* and *Show Library Browser*.
+
+**Music Assistant extras (optional).** With [Music Assistant](https://music-assistant.io/) you can enable a library browser (Artists/Albums/Playlists/Tracks with A-Z jump), an "up next" line under the current track, an artist-photo fallback when a track has no album art, and a playlist that the play button starts when nothing is playing.
+
+```
+  media_music_assistant: "true"
+  music_default_playlist: "" # optional: Music Assistant playlist name, e.g. "Favourites"
+```
+
+These also need a small Home Assistant side, in the `home_assistant` folder of this repository:
+1. Copy `home_assistant/python_scripts/*.py` into your Home Assistant `python_scripts` folder and add `python_script:` to `configuration.yaml`.
+2. Load the three files in `home_assistant/packages` as [packages](https://www.home-assistant.io/docs/configuration/packages/) (for example copy them to a `packages` folder and add `homeassistant: packages: !include_dir_named packages`).
+3. Restart Home Assistant.
+
+The library browser keeps one shared browse state, so if several panels browse at the same moment they will show the same list. `input_boolean.ma_browse_fix_library_sort` (*Music Library: Fix Sorting*) re-sorts the library by displayed name instead of Music Assistant's internal sort name; it is off by default because it is slower on large libraries.
 
 ### Scenes Page
 The scenes page is intended to support media devices and can be any device that supports a toggle switch to turn it on or off. These devices require the ability to be turned on or off allowing most media devices to be supported.

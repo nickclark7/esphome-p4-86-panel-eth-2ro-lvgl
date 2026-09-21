@@ -120,7 +120,34 @@ substitutions:
   
   media_page_title: "Media"
   media_page_hide_from_navigation: false
-  media_page_hide_switcher: true
+  # Media page speaker picker. Slot 1 is always this panel's own speaker; slot 2 defaults
+  # to external_media_player. Set media_target_count to how many slots to offer (1-8).
+  # Leave media_target1_entity as media_player.none to control this panel's speaker
+  # directly on the device; set it to this panel's Home Assistant / Music Assistant media
+  # player to also get titles, album art and next/previous. See CONFIGURATION.md.
+  media_target_count: "2"
+  media_target1_name: "This Panel"
+  media_target1_entity: media_player.none
+  media_target2_name: "External"
+  media_target2_entity: media_player.${external_media_player}
+  media_target3_name: "Speaker 3"
+  media_target3_entity: media_player.none
+  media_target4_name: "Speaker 4"
+  media_target4_entity: media_player.none
+  media_target5_name: "Speaker 5"
+  media_target5_entity: media_player.none
+  media_target6_name: "Speaker 6"
+  media_target6_entity: media_player.none
+  media_target7_name: "Speaker 7"
+  media_target7_entity: media_player.none
+  media_target8_name: "Speaker 8"
+  media_target8_entity: media_player.none
+  album_art_resize: 256x256 # album art is fetched small and scaled up on screen
+  # Optional Music Assistant extras: library browser, "up next", artist-photo fallback
+  # and music_default_playlist. Needs the Home Assistant side from home_assistant/
+  # (see CONFIGURATION.md). Leave "false" if you don't use Music Assistant.
+  media_music_assistant: "false"
+  music_default_playlist: "" # Music Assistant playlist the play button starts when nothing is playing
   
   scenes_page_title: "Screens"
   scenes_page_hide_from_navigation: false
@@ -380,33 +407,15 @@ esp32:
   # [FORK] ---------------------------------------------------------------------
   # Added substitutions for contributed features. See the PR description / CONTRIBUTIONS.md.
   # ---------------------------------------------------------------------------
-  music_default_playlist: "your_playlist"   # Music Assistant playlist the media play button starts when idle
   climate_hvac_count: "3"                    # slots 1..N are HVAC (climate.*); the rest are read-only temp sensors (sensor.*)
   light_reset_kelvin: "3500"                 # reset-to-white button: colour temperature (K)
   light_reset_brightness: "80"               # reset button: brightness %
   light_reset_hue: "27"                      # reset white point hue
   light_reset_sat: "45"                      # reset white point saturation
-  album_art_resize: 256x256                  # album-art fetch/decode size (smaller = lighter on the main loop)
   # Media picker targets - dropdown index maps to these players (slot 1 = this panel's own MA player).
-  media_target1_name: "This Panel"
-  media_target1_entity: media_player.esp32_p4_86_panel_media_player_2
-  media_target2_name: "Speaker 2"
-  media_target2_entity: media_player.speaker2
-  media_target3_name: "Speaker 3"
-  media_target3_entity: media_player.speaker3
-  media_target4_name: "Speaker 4"
-  media_target4_entity: media_player.speaker4
-  media_target5_name: "Speaker 5"
-  media_target5_entity: media_player.speaker5
-  media_target6_name: "Speaker 6"
-  media_target6_entity: media_player.speaker6
-  media_target7_name: "Speaker 7"
-  media_target7_entity: media_player.speaker7
-  media_target8_name: "Speaker 8"
-  media_target8_entity: media_player.speaker8
   # Home screen 2 - optional second launcher of 6 tiles (home7..home12). Hidden by
   # default; set home_screen_2_hide_from_navigation: false and unhide tiles to use it.
-  # Tip: point a tile's *_page at media_control_page to reach the Media Control page.
+  # Tip: point a tile's *_page at media_page to reach the Media Control page.
   home_screen_2_hide_from_navigation: true
   home_page_2_title: "Home 2"
   home7_icon: "\U000F0335"
@@ -589,6 +598,32 @@ esphome:
   min_version: 2026.9.0
   name_add_mac_suffix: false
   on_boot:
+    - priority: -100
+      then:
+        # Offer only the first media_target_count speakers in the media pickers.
+        - lambda: |-
+            static const char *const names[] = {"${media_target1_name}", "${media_target2_name}",
+                "${media_target3_name}", "${media_target4_name}", "${media_target5_name}",
+                "${media_target6_name}", "${media_target7_name}", "${media_target8_name}"};
+            int n = ${media_target_count};
+            if (n < 1) n = 1;
+            if (n > 8) n = 8;
+            std::string opts;
+            for (int i = 0; i < n; i++) {
+              if (i) opts += "\n";
+              opts += names[i];
+            }
+            // Works whether the dropdown id is a plain lv_obj_t* or ESPHome's wrapper.
+            auto obj = [](auto *w) -> lv_obj_t * {
+              if constexpr (std::is_same_v<std::remove_cv_t<std::remove_pointer_t<decltype(w)>>, lv_obj_t>) return w;
+              else return w->obj;
+            };
+            lv_dropdown_set_options(obj(id(media_target_dd)), opts.c_str());
+            lv_dropdown_set_options(obj(id(media_target_dd_settings)), opts.c_str());
+            // Setting options resets the selection; keep the current target shown.
+            int sel = id(media_target_index) < n ? id(media_target_index) : 0;
+            lv_dropdown_set_selected(obj(id(media_target_dd)), sel);
+            lv_dropdown_set_selected(obj(id(media_target_dd_settings)), sel);
     - priority: -150
       then:
         - delay: 300ms
@@ -1343,16 +1378,11 @@ media_player:
             then:
               - lambda: |-
                   id(media_state) = true;
-              - lvgl.label.update:
-                  id: lbl_media_playing
-                  text: "Playing"
-                  text_color: lime
+              - script.execute: refresh_np
             else:
               - lambda: |-
                   id(media_state) = false;
-              - lvgl.label.update:
-                  id: lbl_media_playing
-                  text: "Nothing Playing"
+              - script.execute: refresh_np
               - script.execute: set_uimode
         - if:
             condition:
@@ -1440,9 +1470,6 @@ media_player:
       - lambda: |-
           ESP_LOGD("media_player.on_volume", "Volume: %f", x);
       - lambda: id(speaker_volume) = int(x * 10) ;
-      - lvgl.bar.update:
-          id: bar_volume
-          value: !lambda return id(speaker_volume) * 10 ;
 
 micro_wake_word:
   id: mww
@@ -1815,94 +1842,8 @@ script:
   # --- Media speaker picker (Option A+) ---
   # Map the dropdown index -> the Music Assistant entity we command.
   # [FORK] Media picker — retarget the panel's media controls to a chosen player. See CONTRIBUTIONS.md §3.
-  - id: apply_media_target
-    then:
-      - lambda: |-
-          switch (id(media_target_index)) {
-            case 0: id(media_target) = "${media_target1_entity}"; break;
-            case 1: id(media_target) = "${media_target2_entity}"; break;
-            case 2: id(media_target) = "${media_target3_entity}"; break;
-            case 3: id(media_target) = "${media_target4_entity}"; break;
-            case 4: id(media_target) = "${media_target5_entity}"; break;
-            case 5: id(media_target) = "${media_target6_entity}"; break;
-            case 6: id(media_target) = "${media_target7_entity}"; break;
-            case 7: id(media_target) = "${media_target8_entity}"; break;
-            default: id(media_target) = "media_player.esp32_p4_86_panel_media_player_2"; break;
-          }
   # Drive the now-playing display (title/artist/art) from the SELECTED speaker's sensors.
   # [FORK] Media picker — refresh now-playing / album art for the selected player. See CONTRIBUTIONS.md §3.
-  - id: refresh_np
-    then:
-      - lambda: |-
-          std::string st, ti, ar, art;
-          switch (id(media_target_index)) {
-            case 0: st=id(sp1_state).state; ti=id(sp1_title).state; ar=id(sp1_artist).state; art=id(sp1_art).state; break;
-            case 1: st=id(sp2_state).state; ti=id(sp2_title).state; ar=id(sp2_artist).state; art=id(sp2_art).state; break;
-            case 2: st=id(sp3_state).state; ti=id(sp3_title).state; ar=id(sp3_artist).state; art=id(sp3_art).state; break;
-            case 3: st=id(sp4_state).state; ti=id(sp4_title).state; ar=id(sp4_artist).state; art=id(sp4_art).state; break;
-            case 4: st=id(sp5_state).state; ti=id(sp5_title).state; ar=id(sp5_artist).state; art=id(sp5_art).state; break;
-            case 5: st=id(sp6_state).state; ti=id(sp6_title).state; ar=id(sp6_artist).state; art=id(sp6_art).state; break;
-            case 6: st=id(sp7_state).state; ti=id(sp7_title).state; ar=id(sp7_artist).state; art=id(sp7_art).state; break;
-            case 7: st=id(sp8_state).state; ti=id(sp8_title).state; ar=id(sp8_artist).state; art=id(sp8_art).state; break;
-            default: st=id(sp1_state).state; ti=id(sp1_title).state; ar=id(sp1_artist).state; art=id(sp1_art).state; break;
-          }
-          bool playing = (st == "playing");
-          id(np_is_playing) = playing;
-          id(np_title) = ti;
-          id(np_artist) = ar;
-          std::string u = "";
-          bool hasart = playing && !art.empty() && art != "unknown" && art != "unavailable";
-          if (hasart) {
-            u = art;
-            if (u.rfind("http", 0) != 0) u = std::string("${home_assistant_host}") + u;
-          }
-          id(np_art_changed) = (u != id(np_last_art));
-          id(np_art_url) = u;
-          id(np_last_art) = u;
-      # Only touch the media-control widgets / fetch album art when that page is
-      # actually visible. Otherwise 8 speakers' track changes fire album-art HTTP
-      # downloads on the single main loop and stall the whole UI (incl. the VA beep).
-      # media_control_page's on_load clears np_last_art + re-runs refresh_np, so it
-      # repaints correctly when opened.
-      - if:
-          condition:
-            lvgl.page.is_showing: media_control_page
-          then:
-            - if:
-                condition:
-                  lambda: 'return id(np_is_playing);'
-                then:
-                  - lvgl.label.update:
-                      id: lbl_mc_playing
-                      text: !lambda 'return id(np_title).empty() ? "Playing" : id(np_title).c_str();'
-                  - lvgl.label.update:
-                      id: lbl_mc_artist
-                      text: !lambda 'return id(np_artist).c_str();'
-                  - lvgl.widget.show: lbl_mc_artist
-                  - if:
-                      condition:
-                        lambda: 'return !id(np_art_url).empty();'
-                      then:
-                        - if:
-                            condition:
-                              lambda: 'return id(np_art_changed);'
-                            then:
-                              - online_image.set_url:
-                                  id: mc_album_art
-                                  url: !lambda 'return id(np_art_url);'
-                              - component.update: mc_album_art
-                      else:
-                        - lvgl.widget.hide: img_mc_art
-                        - lvgl.widget.hide: obj_mc_scrim
-                        - online_image.release: mc_album_art
-                else:
-                  - lvgl.label.update:
-                      id: lbl_mc_playing
-                      text: "Nothing Playing"
-                  - lvgl.widget.hide: lbl_mc_artist
-                  - lvgl.widget.hide: img_mc_art
-                  - lvgl.widget.hide: obj_mc_scrim
-                  - online_image.release: mc_album_art
 
   # Manual assist trigger for the nav-bar mic button.
   # Mirrors the micro_wake_word on_wake_word_detected path so the on-device
@@ -2324,14 +2265,168 @@ script:
                 sprintf(buf, "%s", display_string.c_str());
                 return buf;
 
+  - id: apply_media_target
+    then:
+      - lambda: |-
+          switch (id(media_target_index)) {
+            case 0: id(media_target) = "${media_target1_entity}"; break;
+            case 1: id(media_target) = "${media_target2_entity}"; break;
+            case 2: id(media_target) = "${media_target3_entity}"; break;
+            case 3: id(media_target) = "${media_target4_entity}"; break;
+            case 4: id(media_target) = "${media_target5_entity}"; break;
+            case 5: id(media_target) = "${media_target6_entity}"; break;
+            case 6: id(media_target) = "${media_target7_entity}"; break;
+            case 7: id(media_target) = "${media_target8_entity}"; break;
+            default: id(media_target) = "${media_target1_entity}"; break;
+          }
+      # Keep both pickers in step (e.g. when output_audio switches the target), and
+      # only offer mute for this panel's own speaker.
+      - lvgl.dropdown.update:
+          id: media_target_dd
+          selected_index: !lambda 'return id(media_target_index);'
+      - lvgl.dropdown.update:
+          id: media_target_dd_settings
+          selected_index: !lambda 'return id(media_target_index);'
+      - if:
+          condition:
+            lambda: 'return id(media_target_index) == 0;'
+          then:
+            - lvgl.widget.show: lbl_mc_mute
+          else:
+            - lvgl.widget.hide: lbl_mc_mute
+
+  - id: refresh_np
+    then:
+      # np_last_art tracks the URL we've actually COMMITTED to fetching,
+      # not just the latest observed one — it's only advanced right before an
+      # online_image.set_url call below, gated on np_art_fetch_in_flight. Two
+      # rapid track changes (e.g. jumping straight to media_page after
+      # a browse-triggered play, before the backend's real new-track attributes
+      # have even arrived, quickly followed by the real update) used to fire two
+      # overlapping online_image fetches; whichever HTTP response happened to
+      # land second — not necessarily the one requested second — won: the art
+      # could visibly get stuck on a stale track until the page was reopened.
+      - lambda: |-
+          std::string st, ti, ar, art;
+          switch (id(media_target_index)) {
+            case 0:
+              if (std::string("${media_target1_entity}") == "media_player.none") {
+                // No HA entity for this panel: show the local speaker's own state.
+                st = id(media_state) ? "playing" : "idle"; ti = "Playing"; ar = ""; art = "";
+              } else {
+                st=id(sp1_state).state; ti=id(sp1_title).state; ar=id(sp1_artist).state; art=id(sp1_art).state;
+              }
+              break;
+            case 1: st=id(sp2_state).state; ti=id(sp2_title).state; ar=id(sp2_artist).state; art=id(sp2_art).state; break;
+            case 2: st=id(sp3_state).state; ti=id(sp3_title).state; ar=id(sp3_artist).state; art=id(sp3_art).state; break;
+            case 3: st=id(sp4_state).state; ti=id(sp4_title).state; ar=id(sp4_artist).state; art=id(sp4_art).state; break;
+            case 4: st=id(sp5_state).state; ti=id(sp5_title).state; ar=id(sp5_artist).state; art=id(sp5_art).state; break;
+            case 5: st=id(sp6_state).state; ti=id(sp6_title).state; ar=id(sp6_artist).state; art=id(sp6_art).state; break;
+            case 6: st=id(sp7_state).state; ti=id(sp7_title).state; ar=id(sp7_artist).state; art=id(sp7_art).state; break;
+            case 7: st=id(sp8_state).state; ti=id(sp8_title).state; ar=id(sp8_artist).state; art=id(sp8_art).state; break;
+            default: st=id(sp1_state).state; ti=id(sp1_title).state; ar=id(sp1_artist).state; art=id(sp1_art).state; break;
+          }
+          id(np_state) = st;
+          bool playing = (st == "playing");
+          id(np_is_playing) = playing;
+          id(np_title) = ti;
+          id(np_artist) = ar;
+          std::string u = "";
+          bool hasart = playing && !art.empty() && art != "unknown" && art != "unavailable";
+          if (hasart) {
+            u = art;
+            if (u.rfind("http", 0) != 0) u = std::string("${home_assistant_host}") + u;
+          } else if (playing && !ar.empty() && id(np_artist_fallback_for) == ar && !id(np_artist_fallback_url).empty()) {
+            // No track/album art (confirmed live: entity_picture is entirely
+            // absent for some library tracks, e.g. an album with no art of its own) —
+            // fall back to the artist's own photo from Music Assistant, if we've
+            // already resolved one for this exact artist (see the lookup trigger
+            // below and home_assistant/packages/media_artist_image.yaml).
+            u = id(np_artist_fallback_url);
+          }
+          id(np_art_changed) = (u != id(np_last_art));
+          id(np_art_url) = u;
+      # Only touch the media-control widgets / fetch album art when that page is
+      # actually visible. Otherwise 8 speakers' track changes fire album-art HTTP
+      # downloads on the single main loop and stall the whole UI (incl. the VA beep).
+      # media_page's on_load clears np_last_art + re-runs refresh_np, so it
+      # repaints correctly when opened.
+      - if:
+          condition:
+            lvgl.page.is_showing: media_page
+          then:
+            - if:
+                condition:
+                  lambda: 'return id(np_is_playing);'
+                then:
+                  - lvgl.label.update:
+                      id: lbl_mc_playing
+                      text: !lambda 'return id(np_title).empty() ? "Playing" : id(np_title).c_str();'
+                  - lvgl.label.update:
+                      id: lbl_mc_artist
+                      text: !lambda 'return id(np_artist).c_str();'
+                  - lvgl.widget.show: lbl_mc_artist
+                  - if:
+                      condition:
+                        lambda: 'return ${media_music_assistant} && id(mc_show_next_track).state && (id(np_title) != id(np_last_queue_title));'
+                      then:
+                        - lambda: 'id(np_last_queue_title) = id(np_title);'
+                        - homeassistant.action:
+                            action: script.ma_refresh_next_track
+                            data:
+                              target: !lambda 'return id(media_target);'
+                  - if:
+                      condition:
+                        lambda: 'return !id(np_art_url).empty();'
+                      then:
+                        - if:
+                            condition:
+                              lambda: 'return id(np_art_changed) && !id(np_art_fetch_in_flight);'
+                            then:
+                              - lambda: |-
+                                  id(np_art_fetch_in_flight) = true;
+                                  id(np_last_art) = id(np_art_url);
+                              - online_image.set_url:
+                                  id: mc_album_art
+                                  url: !lambda 'return id(np_art_url);'
+                              - component.update: mc_album_art
+                      else:
+                        - lvgl.widget.hide: img_mc_art
+                        - lvgl.widget.hide: obj_mc_scrim
+                        - online_image.release: mc_album_art
+                        - lambda: |-
+                            id(np_last_art) = "";
+                            id(np_art_fetch_in_flight) = false;
+                        # No primary art AND no cached fallback for the CURRENT
+                        # artist yet — ask HA to resolve their photo (see
+                        # home_assistant/packages/media_artist_image.yaml). Guarded by
+                        # np_artist_fallback_for so this only fires once per artist,
+                        # not on every incidental refresh_np call.
+                        - if:
+                            condition:
+                              lambda: 'return ${media_music_assistant} && !id(np_artist).empty() && (id(np_artist_fallback_for) != id(np_artist));'
+                            then:
+                              - homeassistant.action:
+                                  action: script.ma_refresh_artist_image
+                                  data:
+                                    target: !lambda 'return id(media_target);'
+                                    artist_name: !lambda 'return id(np_artist);'
+                else:
+                  - lvgl.label.update:
+                      id: lbl_mc_playing
+                      text: "Nothing Playing"
+                  - lvgl.widget.hide: lbl_mc_artist
+                  - lvgl.widget.hide: lbl_mc_next
+                  - lambda: 'id(np_last_queue_title) = "";'
+                  - lvgl.widget.hide: img_mc_art
+                  - lvgl.widget.hide: obj_mc_scrim
+                  - online_image.release: mc_album_art
+
   - id: set_volume
     then:
       - media_player.volume_set:
           volume: !lambda return id(speaker_volume) * 0.1 ;
       - lambda: ESP_LOGD("media_player.volume_set", "speaker_volume = %.1f", id(speaker_volume) * 0.1);
-      - lvgl.bar.update:
-          id: bar_volume
-          value: !lambda return id(speaker_volume) * 10 ;
       - lvgl.bar.update:
           id: bar_mc_volume
           value: !lambda return id(speaker_volume) * 10 ;
@@ -3335,15 +3430,14 @@ switch:
       - media_player.volume_set:
           id: speaker_media_player
           volume: 0
-      - lvgl.widget.hide: obj_media
-      - lvgl.widget.hide: lbl_media_playing
-      - lvgl.widget.hide: bar_volume
-      - lvgl.widget.show: obj_ext_media
-      - lvgl.widget.show: lbl_ext_media_playing
-      - lambda: id(media_switcher_external) = true;
-      - lvgl.label.update:
-          id: lbl_media_switcher
-          text: "Ext"
+      # Point the media page at the external player (slot 2) while audio goes there.
+      - if:
+          condition:
+            lambda: 'return ${media_target_count} >= 2;'
+          then:
+            - lambda: 'id(media_target_index) = 1;'
+            - script.execute: apply_media_target
+            - script.execute: refresh_np
       - lvgl.checkbox.update:
           id: chk_output_audio
           state:
@@ -3352,15 +3446,9 @@ switch:
       - media_player.volume_set:
           id: speaker_media_player
           volume: 0.8
-      - lvgl.widget.show: obj_media
-      - lvgl.widget.show: lbl_media_playing
-      - lvgl.widget.show: bar_volume
-      - lvgl.widget.hide: obj_ext_media
-      - lvgl.widget.hide: lbl_ext_media_playing
-      - lambda: id(media_switcher_external) = false;
-      - lvgl.label.update:
-          id: lbl_media_switcher
-          text: "Int"
+      - lambda: 'id(media_target_index) = 0;'
+      - script.execute: apply_media_target
+      - script.execute: refresh_np
       - lvgl.checkbox.update:
           id: chk_output_audio
           state:
@@ -3407,15 +3495,6 @@ switch:
           id: speaker_media_player
           volume: 0
       - lvgl.label.update:
-          id: lbl_media_mute
-          text_color: red
-          text: !lambda |-
-              static char buf[10];
-              std::string icon;
-              icon = "\U000F0581";
-              snprintf(buf, sizeof(buf), "%s", icon.c_str());
-              return buf;
-      - lvgl.label.update:
           id: lbl_mc_mute
           text_color: red
           text: !lambda |-
@@ -3424,10 +3503,6 @@ switch:
               icon = "\U000F0581";
               snprintf(buf, sizeof(buf), "%s", icon.c_str());
               return buf;
-      - lvgl.bar.update:
-          id: bar_volume
-          indicator:
-            bg_color: red
       - lvgl.bar.update:
           id: bar_mc_volume
           indicator:
@@ -3437,15 +3512,6 @@ switch:
           id: speaker_media_player
           volume: 0.8
       - lvgl.label.update:
-          id: lbl_media_mute
-          text_color: lime
-          text: !lambda |-
-              static char buf[10];
-              std::string icon;
-              icon = "\U000F057E";
-              snprintf(buf, sizeof(buf), "%s", icon.c_str());
-              return buf;
-      - lvgl.label.update:
           id: lbl_mc_mute
           text_color: lime
           text: !lambda |-
@@ -3454,10 +3520,6 @@ switch:
               icon = "\U000F057E";
               snprintf(buf, sizeof(buf), "%s", icon.c_str());
               return buf;
-      - lvgl.bar.update:
-          id: bar_volume
-          indicator:
-            bg_color: lime
       - lvgl.bar.update:
           id: bar_mc_volume
           indicator:
@@ -3506,6 +3568,76 @@ switch:
           id: chk_timeout_blank
           state:
             checked: false
+
+  - platform: template
+    id: mc_hide_speaker_select
+    name: "Media Control: Hide Speaker Select"
+    icon: 'mdi:speaker-off'
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    entity_category: config
+    turn_on_action:
+      - lvgl.checkbox.update:
+          id: chk_mc_hide_speaker_select
+          state:
+            checked: true
+      - lvgl.widget.hide: media_target_dd
+    turn_off_action:
+      - lvgl.checkbox.update:
+          id: chk_mc_hide_speaker_select
+          state:
+            checked: false
+      - lvgl.widget.show: media_target_dd
+
+  - platform: template
+    id: mc_show_next_track
+    name: "Media Control: Show Up Next"
+    icon: 'mdi:playlist-music'
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    turn_on_action:
+      - lvgl.checkbox.update:
+          id: chk_mc_show_next_track
+          state:
+            checked: true
+      - if:
+          condition:
+            lambda: 'return !id(next_track_title).state.empty();'
+          then:
+            - lvgl.widget.show: lbl_mc_next
+    turn_off_action:
+      - lvgl.checkbox.update:
+          id: chk_mc_show_next_track
+          state:
+            checked: false
+      - lvgl.widget.hide: lbl_mc_next
+
+  # Show/hide the library browser button on media_page.
+  - platform: template
+    id: mc_show_library
+    name: "Media Control: Show Library Browser"
+    icon: 'mdi:music-box-multiple'
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    turn_on_action:
+      - lvgl.checkbox.update:
+          id: chk_mc_show_library
+          state:
+            checked: true
+      - if:
+          condition:
+            lambda: 'return ${media_music_assistant};'
+          then:
+            - lvgl.widget.show: ico_mc_library
+    turn_off_action:
+      - lvgl.checkbox.update:
+          id: chk_mc_show_library
+          state:
+            checked: false
+      - lvgl.widget.hide: ico_mc_library
+
 
   - platform: template
     id: timer_ringing
@@ -3621,29 +3753,11 @@ switch:
           action: media_player.volume_mute
           data:
             entity_id: media_player.${external_media_player}
-      - lvgl.label.update:
-          id: lbl_ext_media_mute
-          text_color: red
-          text: !lambda |-
-            static char buf[10];
-            std::string icon;
-            icon = "\U000F0581";
-            snprintf(buf, sizeof(buf), "%s", icon.c_str());
-            return buf;
     on_turn_off:
       - homeassistant.action:
           action: media_player.volume_mute
           data:
             entity_id: media_player.${external_media_player}
-      - lvgl.label.update:
-          id: lbl_ext_media_mute
-          text_color: lime
-          text: !lambda |-
-            static char buf[10];
-            std::string icon;
-            icon = "\U000F057E";
-            snprintf(buf, sizeof(buf), "%s", icon.c_str());
-            return buf;
     
   - platform: lvgl
     name: "Alarm Clock 1"
@@ -4009,7 +4123,7 @@ globals:
   - id: media_target
     type: std::string
     restore_value: no
-    initial_value: '"media_player.esp32_p4_86_panel_media_player_2"'
+    initial_value: '"${media_target1_entity}"'
   - id: media_target_index
     type: int
     restore_value: no
@@ -4034,6 +4148,27 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: np_art_fetch_in_flight
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: np_last_queue_title
+    type: std::string
+    restore_value: no
+  # Fallback artist photo (see home_assistant/packages/media_artist_image.yaml) for when the
+  # currently-playing track/album has no art of its own. Cached per-artist so a
+  # pause/resume of the same artist doesn't re-fetch; np_artist_fallback_for is the
+  # artist name this cached URL was actually resolved for, invalidated whenever the
+  # current artist (np_artist) no longer matches it.
+  - id: np_artist_fallback_url
+    type: std::string
+    restore_value: no
+  - id: np_artist_fallback_for
+    type: std::string
+    restore_value: no
+  - id: np_state
+    type: std::string
+    restore_value: no
   - id: light_press_ms
     type: uint32_t
     restore_value: no
@@ -4077,10 +4212,6 @@ globals:
   # True while the assist button paused this panel's own music to free the shared
   # I2S bus for the mic; VA on_end resumes playback and clears this.
   - id: music_paused_by_assist
-    type: bool
-    restore_value: false
-    initial_value: "false"
-  - id: media_switcher_external
     type: bool
     restore_value: false
     initial_value: "false"
@@ -4136,42 +4267,6 @@ http_request:
   watchdog_timeout: 60s
 
 image:
-  - platform: online_image
-    url: ${loading_illustration_file}
-    format: png
-    resize: ${image_resize}
-    type: RGB565
-    transparency: alpha_channel
-    byte_order: ${image_byte_order}
-    id: online_png_image
-    on_download_finished:
-      - script.execute: showonlineimage
-    on_error:
-      - text.set:
-          id: onlineimagefile
-          value: ""
-
-  # Album art for the local media player (JPEG from HA's media_player_proxy).
-  - platform: online_image
-    url: ${loading_illustration_file}
-    format: jpeg
-    resize: ${album_art_resize}
-    type: RGB565
-    id: album_art_image
-    on_download_finished:
-      - lvgl.image.update:
-          id: img_album_art
-          src: album_art_image
-      - if:
-          condition:
-            lambda: 'return id(local_media_state).state == "playing";'
-          then:
-            - lvgl.widget.show: img_album_art
-            - lvgl.widget.show: obj_art_scrim
-    on_error:
-      - lvgl.widget.hide: img_album_art
-      - lvgl.widget.hide: obj_art_scrim
-
   # Album art for the Media Control page (follows the selected speaker).
   - platform: online_image
     url: ${loading_illustration_file}
@@ -4189,9 +4284,47 @@ image:
           then:
             - lvgl.widget.show: img_mc_art
             - lvgl.widget.show: obj_mc_scrim
+      # Clear the in-flight guard, then check whether the desired art moved
+      # on to something else WHILE this fetch was running (e.g. a second track
+      # change arrived mid-download) — refresh_np's own dedup skipped issuing a
+      # second overlapping fetch for it, so this is the only place that chases it.
+      - lambda: 'id(np_art_fetch_in_flight) = false;'
+      - if:
+          condition:
+            lambda: 'return id(np_art_url) != id(np_last_art);'
+          then:
+            - script.execute: refresh_np
     on_error:
       - lvgl.widget.hide: img_mc_art
       - lvgl.widget.hide: obj_mc_scrim
+      # A transient fetch failure (e.g. a network hiccup against MA's
+      # imageproxy) used to stick permanently: refresh_np dedups on np_last_art,
+      # which was already set to this (failed) URL, so nothing ever retried it
+      # until the next distinct track. Clearing it + one delayed retry self-heals
+      # the common transient case; also clears the in-flight guard so a genuinely
+      # newer track isn't blocked from fetching while we wait.
+      - lambda: |-
+          id(np_last_art) = "";
+          id(np_art_fetch_in_flight) = false;
+      - delay: 2s
+      - script.execute: refresh_np
+
+  - platform: online_image
+    url: ${loading_illustration_file}
+    format: png
+    resize: ${image_resize}
+    type: RGB565
+    transparency: alpha_channel
+    byte_order: ${image_byte_order}
+    id: online_png_image
+    on_download_finished:
+      - script.execute: showonlineimage
+    on_error:
+      - text.set:
+          id: onlineimagefile
+          value: ""
+
+
 
   ## Default Images
   - platform: file
@@ -4406,6 +4539,10 @@ font:
     size: 45
     bpp: ${font_icon_bpp}
     glyphs: &icon_glyphs
+      - "\U000F0333"#music-box-multiple (library browser entry button)
+      - "\U000F0731"#arrow-left-bold (library browser: back a level)
+      - "\U000F0387"#music-note (library browser: playable row)
+      - "\U000F1359"#folder-music (library browser: expandable row)
       - "\U000F0079"#battery 100%
       - "\U000F007A"#battery 10%
       - "\U000F007B"#battery 20%
@@ -4901,14 +5038,6 @@ text_sensor:
   - platform: homeassistant
     entity_id: media_player.${external_media_player}
     id: ha_media_status
-    on_value:
-      then:
-       - lvgl.label.update:
-           id: lbl_ext_media_playing
-           text: !lambda |-
-             char buf[20];
-             sprintf(buf, "%s", id(ha_media_status).state.c_str());
-             return buf;
 
   - platform: homeassistant
     entity_id: media_player.${external_media_player}
@@ -4916,73 +5045,24 @@ text_sensor:
     attribute: media_content_id
 
 ### LOCAL (this device) now-playing metadata for album art ###
-# If art/title never populate while playing via Music Assistant, the metadata
-# may live on MA's copy of this player — change the entity_id below to that one.
-  # --- media_page (device-only) now-playing: drives lbl_media_playing/lbl_np_artist/album_art_image ---
-  - platform: homeassistant
-    id: local_media_state
-    entity_id: media_player.esp32_p4_86_panel_media_player_2
-    on_value:
-      then:
-        - if:
-            condition:
-              lambda: 'return id(local_media_state).state == "playing";'
-            then:
-              - lvgl.widget.show: lbl_np_artist
-            else:
-              - lvgl.label.update:
-                  id: lbl_media_playing
-                  text: "Nothing Playing"
-              - lvgl.widget.hide: lbl_np_artist
-              - lvgl.widget.hide: img_album_art
-              - lvgl.widget.hide: obj_art_scrim
-              - online_image.release: album_art_image
+
+
+
+
 
   - platform: homeassistant
-    id: local_media_art
-    entity_id: media_player.esp32_p4_86_panel_media_player_2
-    attribute: entity_picture
+    name: "Alarm Status"
+    entity_id: ${alarm_entity}
+    id: alarm_status
     on_value:
       then:
-        - if:
-            condition:
-              lambda: 'return !x.empty() && x != "unknown" && x != "unavailable";'
-            then:
-              - online_image.set_url:
-                  id: album_art_image
-                  url: !lambda |-
-                    std::string u = x;
-                    if (u.rfind("http", 0) != 0) u = std::string("${home_assistant_host}") + u;
-                    return u;
-              - component.update: album_art_image
-
-  - platform: homeassistant
-    id: local_media_title
-    entity_id: media_player.esp32_p4_86_panel_media_player_2
-    attribute: media_title
-    on_value:
-      then:
-        - if:
-            condition:
-              lambda: 'return !x.empty() && id(local_media_state).state == "playing";'
-            then:
-              - lvgl.label.update:
-                  id: lbl_media_playing
-                  text: !lambda 'return x.c_str();'
-
-  - platform: homeassistant
-    id: local_media_artist
-    entity_id: media_player.esp32_p4_86_panel_media_player_2
-    attribute: media_artist
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: lbl_np_artist
-            text: !lambda 'return x.c_str();'
+        - lvgl.widget.show: lbl_alarm_status
+        - lvgl.widget.show: lbl_alarm
+        - lvgl.widget.show: btn_mx_alarm
+        - script.execute: set_alarm_status
 
   # --- Per-speaker now-playing sensors for the media picker (Option A+). ---
   # Index 0..7 MUST match the dropdown order and the switch() in refresh_np.
-  # spK reads ${media_targetK_entity}; slot 1 is this panel's own MA player.
   - platform: homeassistant
     id: sp1_state
     entity_id: ${media_target1_entity}
@@ -5232,17 +5312,381 @@ text_sensor:
       then:
         - script.execute: refresh_np
 
+### MUSIC LIBRARY BROWSER TEXT SENSORS ###
+# Bridges home_assistant/packages/music_library_browser.yaml's sensor.ma_browse_state to
+# library_browse_page. sensor.ma_browse_state is the single source of truth for
+# "what's on screen" — see CONFIGURATION.md and home_assistant/home_assistant/packages/music_library_browser.yaml.
+# HA attribute booleans arrive over the API as ESPHome's own "on"/"off" text
+# convention (confirmed live), not Python's True/False.
   - platform: homeassistant
-    name: "Alarm Status"
-    entity_id: ${alarm_entity}
-    id: alarm_status
+    id: lib_level_title
+    entity_id: sensor.ma_browse_state
+    internal: true
     on_value:
       then:
-        - lvgl.widget.show: lbl_alarm_status
-        - lvgl.widget.show: lbl_alarm
-        - lvgl.widget.show: btn_mx_alarm
-        - script.execute: set_alarm_status
+        - lvgl.label.update:
+            id: lbl_lib_level_title
+            text: !lambda 'return x.c_str();'
 
+  # Bridges home_assistant/packages/media_next_track.yaml's sensor.ma_next_track (the
+  # "up next" track, one look-ahead only — see that file for why) to media_page.
+  - platform: homeassistant
+    id: next_track_title
+    entity_id: sensor.ma_next_track
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(mc_show_next_track).state && !x.empty();'
+            then:
+              - lvgl.label.update:
+                  id: lbl_mc_next
+                  text: !lambda 'return ("Next: " + x).c_str();'
+              - lvgl.widget.show: lbl_mc_next
+            else:
+              - lvgl.widget.hide: lbl_mc_next
+
+  # Bridges home_assistant/packages/media_artist_image.yaml's sensor.ma_artist_image (the
+  # fallback artist photo used when the current track/album has no art of its own)
+  # to media_page. for_artist is read (no on_value needed) by the URL
+  # sensor's own handler below to confirm the result is still relevant.
+  - platform: homeassistant
+    id: artist_image_for_artist
+    entity_id: sensor.ma_artist_image
+    attribute: for_artist
+    internal: true
+
+  - platform: homeassistant
+    id: artist_image_url
+    entity_id: sensor.ma_artist_image
+    internal: true
+    on_value:
+      then:
+        # Only apply it if it's still for the artist currently playing — by the time
+        # an async HA round-trip like this resolves, playback may have already moved
+        # on to someone else.
+        - if:
+            condition:
+              lambda: 'return (id(artist_image_for_artist).state == id(np_artist));'
+            then:
+              - lambda: |-
+                  id(np_artist_fallback_for) = id(np_artist);
+                  id(np_artist_fallback_url) = x;
+              - script.execute: refresh_np
+
+  - platform: homeassistant
+    id: lib_can_go_back
+    entity_id: sensor.ma_browse_state
+    attribute: can_go_back
+    internal: true
+    on_value:
+      then:
+        # Confirmed live: HA sends boolean attributes over the native API as
+        # ESPHome's own "on"/"off" convention, not Python's True/False.
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.widget.show: but_lib_back
+              # Also hide the A-Z letter strip on the root screen (Artists/
+              # Albums/Playlists/etc.) — jumping to a letter makes no sense there.
+              - lvgl.widget.show: obj_lib_letter_strip
+              # Per-row play-icon show logic used to live here too, but
+              # can_go_back doesn't reliably refire on every render — it stays "on"
+              # the whole time drilling from the Artists list into a specific
+              # artist, for example — so rows past the first could get stuck
+              # showing a stale (usually hidden) play button. Moved to each
+              # lib_itemN_title's on_value instead, which is guaranteed to fire
+              # every render — see there.
+            else:
+              - lvgl.widget.hide: but_lib_back
+              - lvgl.widget.hide: obj_lib_letter_strip
+              # Hide every row's play icon on the root screen — "playing" a
+              # top-level category (Artists/Albums/...) doesn't make sense.
+              - lvgl.widget.hide: but_lib_item1_play
+              - lvgl.widget.hide: but_lib_item2_play
+              - lvgl.widget.hide: but_lib_item3_play
+              - lvgl.widget.hide: but_lib_item4_play
+              - lvgl.widget.hide: but_lib_item5_play
+              - lvgl.widget.hide: but_lib_item6_play
+
+  - platform: homeassistant
+    id: lib_has_prev_page
+    entity_id: sensor.ma_browse_state
+    attribute: has_prev_page
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.widget.show: but_lib_prev
+            else:
+              - lvgl.widget.hide: but_lib_prev
+
+  - platform: homeassistant
+    id: lib_has_next_page
+    entity_id: sensor.ma_browse_state
+    attribute: has_next_page
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.widget.show: but_lib_next
+            else:
+              - lvgl.widget.hide: but_lib_next
+
+  - platform: homeassistant
+    id: lib_item1_title
+    entity_id: sensor.ma_browse_state
+    attribute: item1_title
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return !x.empty();'
+            then:
+              - lvgl.widget.show: but_lib_item1
+              - lvgl.label.update:
+                  id: lbl_lib_item1
+                  text: !lambda 'return x.c_str();'
+              # Title's on_value is the one trigger guaranteed to fire on
+              # every render (can_go_back/can_expand can repeat their previous
+              # value across a render — e.g. drilling from the Artists list into a
+              # specific artist keeps can_go_back "on" the whole time — so those
+              # don't reliably refire). id(lib_can_go_back).state is still always
+              # the correct CURRENT value to read even when its own on_value hasn't
+              # fired recently.
+              - if:
+                  condition:
+                    lambda: 'return (id(lib_can_go_back).state == "on");'
+                  then:
+                    - lvgl.widget.show: but_lib_item1_play
+                  else:
+                    - lvgl.widget.hide: but_lib_item1_play
+            else:
+              - lvgl.widget.hide: but_lib_item1
+              - lvgl.widget.hide: but_lib_item1_play
+  - platform: homeassistant
+    id: lib_item1_can_expand
+    entity_id: sensor.ma_browse_state
+    attribute: item1_can_expand
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.label.update: {id: ico_lib_item1, text: "\U000F1359"} #folder-music
+            else:
+              - lvgl.label.update: {id: ico_lib_item1, text: "\U000F0387"} #music-note
+
+  - platform: homeassistant
+    id: lib_item2_title
+    entity_id: sensor.ma_browse_state
+    attribute: item2_title
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return !x.empty();'
+            then:
+              - lvgl.widget.show: but_lib_item2
+              - lvgl.label.update:
+                  id: lbl_lib_item2
+                  text: !lambda 'return x.c_str();'
+              - if:
+                  condition:
+                    lambda: 'return (id(lib_can_go_back).state == "on");'
+                  then:
+                    - lvgl.widget.show: but_lib_item2_play
+                  else:
+                    - lvgl.widget.hide: but_lib_item2_play
+            else:
+              - lvgl.widget.hide: but_lib_item2
+              - lvgl.widget.hide: but_lib_item2_play
+  - platform: homeassistant
+    id: lib_item2_can_expand
+    entity_id: sensor.ma_browse_state
+    attribute: item2_can_expand
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.label.update: {id: ico_lib_item2, text: "\U000F1359"} #folder-music
+            else:
+              - lvgl.label.update: {id: ico_lib_item2, text: "\U000F0387"} #music-note
+
+  - platform: homeassistant
+    id: lib_item3_title
+    entity_id: sensor.ma_browse_state
+    attribute: item3_title
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return !x.empty();'
+            then:
+              - lvgl.widget.show: but_lib_item3
+              - lvgl.label.update:
+                  id: lbl_lib_item3
+                  text: !lambda 'return x.c_str();'
+              - if:
+                  condition:
+                    lambda: 'return (id(lib_can_go_back).state == "on");'
+                  then:
+                    - lvgl.widget.show: but_lib_item3_play
+                  else:
+                    - lvgl.widget.hide: but_lib_item3_play
+            else:
+              - lvgl.widget.hide: but_lib_item3
+              - lvgl.widget.hide: but_lib_item3_play
+  - platform: homeassistant
+    id: lib_item3_can_expand
+    entity_id: sensor.ma_browse_state
+    attribute: item3_can_expand
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.label.update: {id: ico_lib_item3, text: "\U000F1359"} #folder-music
+            else:
+              - lvgl.label.update: {id: ico_lib_item3, text: "\U000F0387"} #music-note
+
+  - platform: homeassistant
+    id: lib_item4_title
+    entity_id: sensor.ma_browse_state
+    attribute: item4_title
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return !x.empty();'
+            then:
+              - lvgl.widget.show: but_lib_item4
+              - lvgl.label.update:
+                  id: lbl_lib_item4
+                  text: !lambda 'return x.c_str();'
+              - if:
+                  condition:
+                    lambda: 'return (id(lib_can_go_back).state == "on");'
+                  then:
+                    - lvgl.widget.show: but_lib_item4_play
+                  else:
+                    - lvgl.widget.hide: but_lib_item4_play
+            else:
+              - lvgl.widget.hide: but_lib_item4
+              - lvgl.widget.hide: but_lib_item4_play
+  - platform: homeassistant
+    id: lib_item4_can_expand
+    entity_id: sensor.ma_browse_state
+    attribute: item4_can_expand
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.label.update: {id: ico_lib_item4, text: "\U000F1359"} #folder-music
+            else:
+              - lvgl.label.update: {id: ico_lib_item4, text: "\U000F0387"} #music-note
+
+  - platform: homeassistant
+    id: lib_item5_title
+    entity_id: sensor.ma_browse_state
+    attribute: item5_title
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return !x.empty();'
+            then:
+              - lvgl.widget.show: but_lib_item5
+              - lvgl.label.update:
+                  id: lbl_lib_item5
+                  text: !lambda 'return x.c_str();'
+              - if:
+                  condition:
+                    lambda: 'return (id(lib_can_go_back).state == "on");'
+                  then:
+                    - lvgl.widget.show: but_lib_item5_play
+                  else:
+                    - lvgl.widget.hide: but_lib_item5_play
+            else:
+              - lvgl.widget.hide: but_lib_item5
+              - lvgl.widget.hide: but_lib_item5_play
+  - platform: homeassistant
+    id: lib_item5_can_expand
+    entity_id: sensor.ma_browse_state
+    attribute: item5_can_expand
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.label.update: {id: ico_lib_item5, text: "\U000F1359"} #folder-music
+            else:
+              - lvgl.label.update: {id: ico_lib_item5, text: "\U000F0387"} #music-note
+
+  - platform: homeassistant
+    id: lib_item6_title
+    entity_id: sensor.ma_browse_state
+    attribute: item6_title
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return !x.empty();'
+            then:
+              - lvgl.widget.show: but_lib_item6
+              - lvgl.label.update:
+                  id: lbl_lib_item6
+                  text: !lambda 'return x.c_str();'
+              - if:
+                  condition:
+                    lambda: 'return (id(lib_can_go_back).state == "on");'
+                  then:
+                    - lvgl.widget.show: but_lib_item6_play
+                  else:
+                    - lvgl.widget.hide: but_lib_item6_play
+            else:
+              - lvgl.widget.hide: but_lib_item6
+              - lvgl.widget.hide: but_lib_item6_play
+  - platform: homeassistant
+    id: lib_item6_can_expand
+    entity_id: sensor.ma_browse_state
+    attribute: item6_can_expand
+    internal: true
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: 'return (x == "on");'
+            then:
+              - lvgl.label.update: {id: ico_lib_item6, text: "\U000F1359"} #folder-music
+            else:
+              - lvgl.label.update: {id: ico_lib_item6, text: "\U000F0387"} #music-note
 ### CLIMATE PAGE TEXT SENSORS ###
   - platform: homeassistant
     id: climate1_preset_mode_ac
@@ -11180,6 +11624,36 @@ lvgl:
 
     - id: media_page
       skip: ${media_page_hide_from_navigation}
+      on_load:
+        then:
+          # Force an album-art refetch on open (refresh_np only fetches while this
+          # page is visible, and dedups via np_last_art — clear it so it repaints).
+          - lambda: |-
+              id(np_last_art) = "";
+              id(np_last_queue_title) = "";
+          - script.execute: refresh_np
+          - lvgl.dropdown.update:
+              id: media_target_dd
+              selected_index: !lambda 'return id(media_target_index);'
+          - if:
+              condition:
+                or:
+                  - switch.is_on: mc_hide_speaker_select
+                  - lambda: 'return ${media_target_count} < 2;'
+              then:
+                - lvgl.widget.hide: media_target_dd
+              else:
+                - lvgl.widget.show: media_target_dd
+          # "Show Library Browser" setting (switch mc_show_library).
+          - if:
+              condition:
+                and:
+                  - lambda: 'return ${media_music_assistant};'
+                  - switch.is_on: mc_show_library
+              then:
+                - lvgl.widget.show: ico_mc_library
+              else:
+                - lvgl.widget.hide: ico_mc_library
       on_swipe_left:
         - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
         - lvgl.page.next:
@@ -11190,22 +11664,18 @@ lvgl:
         - obj:
             styles: page_content
             widgets:
-              # Album-art background + dark scrim (behind everything; shown only
-              # while the local player is playing).
               - image:
-                  id: img_album_art
+                  id: img_mc_art
                   hidden: true
                   clickable: false
                   align: CENTER
-                  # Decoded small (album_art_resize, 256px) so the main-loop JPEG
-                  # decode stays cheap, then scaled up on-display to fill the ~720px
-                  # screen. If you change album_art_resize, set zoom = 720 / <px>
-                  # (256 -> 2.85). Blur is hidden behind obj_art_scrim.
-                  zoom: 2.85
+                  # Scaled up on-display to fill the screen from the small decode
+                  # (see img_album_art). zoom = 720 / album_art_resize px.
+                  scale: 2.85
                   antialias: true
-                  src: album_art_image
+                  src: mc_album_art
               - obj:
-                  id: obj_art_scrim
+                  id: obj_mc_scrim
                   hidden: true
                   clickable: false
                   align: CENTER
@@ -11227,411 +11697,22 @@ lvgl:
                         text_align: CENTER
                         styles: label_text_color
               - obj:
-                  id: obj_media
-                  align: TOP_MID
-                  y: ${taskbar_height}
-                  width: 100%
-                  height: ${page_content_height}
-                  pad_all: 6
-                  bg_opa: TRANSP
-                  border_opa: TRANSP
-                  layout:
-                    pad_row: 6
-                    pad_column: 8
-                    type: GRID
-                    grid_columns: [FR(1), FR(1), FR(1)]
-                    grid_rows: [FR(34), FR(33), FR(33)]
-                  widgets:
-                    - label:
-                        id: ico_media_1
-                        text: "\U000F075E"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 0
-                        grid_cell_row_pos: 2
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - lambda: |-
-                                if (id(speaker_volume) > 0) {
-                                  id(speaker_volume) -= 1;
-                                }
-                            - lambda: |-
-                                ESP_LOGD("speaker_volume", "speaker_volume = %d", id(speaker_volume));
-                            - script.execute: set_volume
-                    - label:
-                        id: ico_media_2
-                        text: "\U000F040E"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 1
-                        grid_cell_row_pos: 1
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - if:
-                                condition:
-                                  lambda: 'return id(local_media_state).state != "playing";'
-                                then:
-                                  # Nothing playing -> start the default Music Assistant playlist on THIS panel.
-                                  - homeassistant.action:
-                                      action: music_assistant.play_media
-                                      data:
-                                        entity_id: media_player.esp32_p4_86_panel_media_player_2
-                                        media_id: "${music_default_playlist}"
-                                        media_type: playlist
-                                        enqueue: replace
-                                else:
-                                  - homeassistant.action:
-                                      action: media_player.media_pause
-                                      data:
-                                        entity_id: media_player.esp32_p4_86_panel_media_player_2
-                    - label:
-                        id: ico_media_3
-                        text: "\U000F075D"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 2
-                        grid_cell_row_pos: 2
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - lambda: |-
-                                if (id(speaker_volume) < 10) {
-                                  id(speaker_volume) += 1;
-                                }
-                            - lambda: |-
-                                ESP_LOGD("speaker_volume", "speaker_volume = %d", id(speaker_volume));
-                            - script.execute: set_volume
-                    - label:
-                        id: lbl_media_mute
-                        text: "\U000F057E"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: lime
-                        grid_cell_column_pos: 1
-                        grid_cell_row_pos: 2
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - switch.toggle: media_mute
-                    - label:
-                        id: ico_media_prev
-                        text: "\U000F04AE"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 0
-                        grid_cell_row_pos: 1
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.media_previous_track
-                                data:
-                                  entity_id: media_player.esp32_p4_86_panel_media_player_2
-                    - label:
-                        id: ico_media_next
-                        text: "\U000F04AD"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 2
-                        grid_cell_row_pos: 1
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.media_next_track
-                                data:
-                                  entity_id: media_player.esp32_p4_86_panel_media_player_2
-                    - label:
-                        id: ico_media_stop
-                        text: "\U000F04DB"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: red
-                        grid_cell_column_pos: 1
-                        grid_cell_row_pos: 0
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.media_stop
-                                data:
-                                  entity_id: media_player.esp32_p4_86_panel_media_player_2
-              - label:
-                  id: lbl_media_playing
-                  align: CENTER
-                  text_align: CENTER
-                  text_font: labelfont_large
-                  text: "Nothing Playing"
-                  styles: label_text_color_blue
-                  y: -170
-              - bar:
-                  id: bar_volume
-                  align: CENTER          
-                  height: 4
-                  width: 100%
-                  y: 85
-                  styles: bg_color
-                  bg_opa: TRANSP
-                  indicator:
-                    bg_color: lime
-                  value: 100
-                  min_value: 0
-                  max_value: 100
-              - obj:
-                  id: obj_ext_media
-                  hidden: true
-                  align: TOP_MID
-                  y: ${taskbar_height}
-                  width: 100%
-                  height: ${page_content_height}
-                  pad_all: 6
-                  bg_opa: TRANSP
-                  border_opa: TRANSP
-                  layout:
-                    pad_row: 6
-                    pad_column: 8
-                    type: GRID
-                    grid_columns: [FR(1), FR(1), FR(1)]
-                    grid_rows: [FR(34), FR(33), FR(33)]
-                  widgets:
-                    - label:
-                        id: ico_ext_media_1
-                        text: "\U000F04AE"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 0
-                        grid_cell_row_pos: 1
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_long_press:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.media_previous_track
-                                data:
-                                  entity_id: media_player.${external_media_player}
-                    - label:
-                        id: ico_ext_media_2
-                        text: "\U000F040E"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 1
-                        grid_cell_row_pos: 1
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_long_press:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.media_pause
-                                data:
-                                  entity_id: media_player.${external_media_player}
-                    - label:
-                        id: ico_ext_media_3
-                        text: "\U000F04AD"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 2
-                        grid_cell_row_pos: 1
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_long_press:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.media_next_track
-                                data:
-                                  entity_id: media_player.${external_media_player}
-                    - label:
-                        id: ico_ext_media_4
-                        text: "\U000F075E"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 0
-                        grid_cell_row_pos: 2
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_long_press:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.volume_down
-                                data:
-                                  entity_id: media_player.${external_media_player}
-                    - label:
-                        id: lbl_ext_media_mute
-                        text: "\U000F057E"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: lime
-                        grid_cell_column_pos: 1
-                        grid_cell_row_pos: 2
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_long_press:
-                          then:
-                            - switch.toggle: ext_media_mute
-                    - label:
-                        id: ico_ext_media_6
-                        text: "\U000F075D"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: blue
-                        grid_cell_column_pos: 2
-                        grid_cell_row_pos: 2
-                        grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_long_press:
-                          then:
-                            - homeassistant.action:
-                                action: media_player.volume_up
-                                data:
-                                  entity_id: media_player.${external_media_player}
-              - label:
-                  id: lbl_ext_media_playing
-                  hidden: true
-                  align: CENTER
-                  text_align: CENTER
-                  text_font: labelfont_large
-                  text: "Nothing Playing"
-                  styles: label_text_color_blue
-                  y: -170
-              - button:
-                  id: but_media_switcher
-                  styles: button_style
-                  hidden: ${media_page_hide_switcher}
-                  align: TOP_RIGHT
-                  x: -15
-                  y: 100
-                  bg_grad_dir: VER
-                  pressed:
-                    styles: button_pressed_style
-                  widgets:
-                    - label:
-                        id: lbl_media_switcher
-                        align: CENTER
-                        text: "Int"
-                  on_long_press:
-                    then:
-                      - if:
-                          condition:
-                            lambda: return !id(media_switcher_external);
-                          then:
-                            - lvgl.widget.hide: obj_media
-                            - lvgl.widget.hide: lbl_media_playing
-                            - lvgl.widget.hide: bar_volume
-                            - lvgl.widget.show: obj_ext_media
-                            - lvgl.widget.show: lbl_ext_media_playing
-                            - lambda: id(media_switcher_external) = true;
-                            - lvgl.label.update:
-                                id: lbl_media_switcher
-                                text: "Ext"
-                          else:
-                            - lvgl.widget.show: obj_media
-                            - lvgl.widget.show: lbl_media_playing
-                            - lvgl.widget.show: bar_volume
-                            - lvgl.widget.hide: obj_ext_media
-                            - lvgl.widget.hide: lbl_ext_media_playing
-                            - lambda: id(media_switcher_external) = false;
-                            - lvgl.label.update:
-                                id: lbl_media_switcher
-                                text: "Int"
-              - label:
-                  id: lbl_np_artist
-                  hidden: true
-                  align: CENTER
-                  text_align: CENTER
-                  text_font: my_font16
-                  text_color: 0xFFFFFF
-                  width: 90%
-                  long_mode: DOT
-                  text: ""
-                  y: -120
- 
-    # [FORK] Second media page — media picker now-playing view. See CONTRIBUTIONS.md §3.
-    - id: media_control_page
-      skip: true
-      on_load:
-        then:
-          # Force an album-art refetch on open (refresh_np only fetches while this
-          # page is visible, and dedups via np_last_art — clear it so it repaints).
-          - lambda: id(np_last_art) = "";
-          - script.execute: refresh_np
-      on_swipe_left:
-        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
-        - lvgl.page.next:
-      on_swipe_right:
-        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
-        - lvgl.page.previous:
-      widgets:
-        - obj:
-            styles: page_content
-            widgets:
-              - image:
-                  id: img_mc_art
-                  hidden: true
-                  clickable: false
-                  align: CENTER
-                  # Scaled up on-display to fill the screen from the small decode
-                  # (see img_album_art). zoom = 720 / album_art_resize px.
-                  zoom: 2.85
-                  antialias: true
-                  src: mc_album_art
-              - obj:
-                  id: obj_mc_scrim
-                  hidden: true
-                  clickable: false
-                  align: CENTER
-                  width: 100%
-                  height: 100%
-                  radius: 0
-                  pad_all: 0
-                  border_opa: TRANSP
-                  bg_color: 0x000000
-                  bg_opa: 45%
-              - obj:
-                  align: TOP_MID
-                  styles: header_footer
-                  widgets:
-                    - label:
-                        text: 'Media Control'
-                        y: 3
-                        align: CENTER
-                        text_align: CENTER
-                        styles: label_text_color
-              - obj:
                   id: obj_mc_media
-                  align: TOP_MID
-                  y: ${taskbar_height}
+                  # Docked at the bottom instead of stretched across the whole
+                  # page (was align: CENTER, height: ${page_content_height}, 3 cols x 5
+                  # rows). Compacting to a fixed-height 4-col x 3-row grid lets all 8
+                  # controls sit close together in 2 rows below the speaker dropdown,
+                  # freeing the middle of the screen for album art + now-playing text.
+                  # page_content is full-screen height (the persistent nav/voice
+                  # bar in top_layer is a separate always-on-top overlay, not a shrink
+                  # of the page's usable area) — align: BOTTOM_MID with y: 0 would sit
+                  # flush with the physical screen edge, straight under that bar. y:-70
+                  # matches the existing BOTTOM_MID clearance used elsewhere on this page
+                  # (see lbl_v_text_response) to clear the ${taskbar_height}px bar.
+                  align: BOTTOM_MID
+                  y: -70
                   width: 100%
-                  height: ${page_content_height}
+                  height: 230
                   pad_all: 6
                   bg_opa: TRANSP
                   border_opa: TRANSP
@@ -11639,26 +11720,31 @@ lvgl:
                     pad_row: 6
                     pad_column: 8
                     type: GRID
-                    grid_columns: [FR(1), FR(1), FR(1)]
-                    grid_rows: [FR(28), FR(28), FR(28), FR(16)]
+                    grid_columns: [FR(1), FR(1), FR(1), FR(1)]
+                    grid_rows: [FR(1), FR(1), FR(1)]
                   widgets:
-                    - label:
-                        id: ico_mc_stop
-                        text: "\U000F04DB"
-                        text_font: icon_font_55
-                        align: CENTER
-                        text_align: CENTER
-                        text_color: red
-                        grid_cell_column_pos: 1
+                    - dropdown:
+                        id: media_target_dd
+                        selected_index: 0
+                        grid_cell_column_pos: 0
+                        grid_cell_column_span: 4
                         grid_cell_row_pos: 0
                         grid_cell_x_align: STRETCH
-                        grid_cell_y_align: STRETCH
-                        on_click:
+                        grid_cell_y_align: CENTER
+                        options:
+                          - "${media_target1_name}"
+                          - "${media_target2_name}"
+                          - "${media_target3_name}"
+                          - "${media_target4_name}"
+                          - "${media_target5_name}"
+                          - "${media_target6_name}"
+                          - "${media_target7_name}"
+                          - "${media_target8_name}"
+                        on_change:
                           then:
-                            - homeassistant.action:
-                                action: media_player.media_stop
-                                data:
-                                  entity_id: !lambda 'return id(media_target);'
+                            - lambda: 'id(media_target_index) = (int) x;'
+                            - script.execute: apply_media_target
+                            - script.execute: refresh_np
                     - label:
                         id: ico_mc_prev
                         text: "\U000F04AE"
@@ -11672,10 +11758,16 @@ lvgl:
                         grid_cell_y_align: STRETCH
                         on_click:
                           then:
-                            - homeassistant.action:
-                                action: media_player.media_previous_track
-                                data:
-                                  entity_id: !lambda 'return id(media_target);'
+                            - if:
+                                condition:
+                                  lambda: 'return id(media_target) == "media_player.none";'
+                                then:
+                                  - logger.log: "Next/previous need media_target1_entity set for this panel"
+                                else:
+                                  - homeassistant.action:
+                                      action: media_player.media_previous_track
+                                      data:
+                                        entity_id: !lambda 'return id(media_target);'
                     - label:
                         id: ico_mc_2
                         text: "\U000F040E"
@@ -11691,20 +11783,37 @@ lvgl:
                           then:
                             - if:
                                 condition:
-                                  lambda: 'return !id(np_is_playing);'
+                                  lambda: 'return id(media_target) == "media_player.none";'
                                 then:
-                                  - homeassistant.action:
-                                      action: music_assistant.play_media
-                                      data:
-                                        entity_id: !lambda 'return id(media_target);'
-                                        media_id: "${music_default_playlist}"
-                                        media_type: playlist
-                                        enqueue: replace
+                                  - media_player.toggle: speaker_media_player
                                 else:
-                                  - homeassistant.action:
-                                      action: media_player.media_pause
-                                      data:
-                                        entity_id: !lambda 'return id(media_target);'
+                                  - if:
+                                      condition:
+                                        lambda: 'return id(np_is_playing);'
+                                      then:
+                                        - homeassistant.action:
+                                            action: media_player.media_pause
+                                            data:
+                                              entity_id: !lambda 'return id(media_target);'
+                                      else:
+                                        # Nothing paused to resume: optionally start a Music
+                                        # Assistant playlist (music_default_playlist).
+                                        - if:
+                                            condition:
+                                              lambda: 'return ${media_music_assistant} && id(np_state) != "paused" && std::string("${music_default_playlist}") != "";'
+                                            then:
+                                              - homeassistant.action:
+                                                  action: music_assistant.play_media
+                                                  data:
+                                                    entity_id: !lambda 'return id(media_target);'
+                                                    media_id: "${music_default_playlist}"
+                                                    media_type: playlist
+                                                    enqueue: replace
+                                            else:
+                                              - homeassistant.action:
+                                                  action: media_player.media_play
+                                                  data:
+                                                    entity_id: !lambda 'return id(media_target);'
                     - label:
                         id: ico_mc_next
                         text: "\U000F04AD"
@@ -11718,10 +11827,39 @@ lvgl:
                         grid_cell_y_align: STRETCH
                         on_click:
                           then:
-                            - homeassistant.action:
-                                action: media_player.media_next_track
-                                data:
-                                  entity_id: !lambda 'return id(media_target);'
+                            - if:
+                                condition:
+                                  lambda: 'return id(media_target) == "media_player.none";'
+                                then:
+                                  - logger.log: "Next/previous need media_target1_entity set for this panel"
+                                else:
+                                  - homeassistant.action:
+                                      action: media_player.media_next_track
+                                      data:
+                                        entity_id: !lambda 'return id(media_target);'
+                    - label:
+                        id: ico_mc_stop
+                        text: "\U000F04DB"
+                        text_font: icon_font_55
+                        align: CENTER
+                        text_align: CENTER
+                        text_color: red
+                        grid_cell_column_pos: 3
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        on_click:
+                          then:
+                            - if:
+                                condition:
+                                  lambda: 'return id(media_target) == "media_player.none";'
+                                then:
+                                  - media_player.stop: speaker_media_player
+                                else:
+                                  - homeassistant.action:
+                                      action: media_player.media_stop
+                                      data:
+                                        entity_id: !lambda 'return id(media_target);'
                     - label:
                         id: ico_mc_1
                         text: "\U000F075E"
@@ -11735,11 +11873,20 @@ lvgl:
                         grid_cell_y_align: STRETCH
                         on_click:
                           then:
-                            - lambda: |-
-                                if (id(speaker_volume) > 0) {
-                                  id(speaker_volume) -= 1;
-                                }
-                            - script.execute: set_volume
+                            - if:
+                                condition:
+                                  lambda: 'return id(media_target_index) == 0;'
+                                then:
+                                  - lambda: |-
+                                      if (id(speaker_volume) > 0) {
+                                        id(speaker_volume) -= 1;
+                                      }
+                                  - script.execute: set_volume
+                                else:
+                                  - homeassistant.action:
+                                      action: media_player.volume_down
+                                      data:
+                                        entity_id: !lambda 'return id(media_target);'
                     - label:
                         id: lbl_mc_mute
                         text: "\U000F057E"
@@ -11767,33 +11914,43 @@ lvgl:
                         grid_cell_y_align: STRETCH
                         on_click:
                           then:
-                            - lambda: |-
-                                if (id(speaker_volume) < 10) {
-                                  id(speaker_volume) += 1;
-                                }
-                            - script.execute: set_volume
-                    - dropdown:
-                        id: media_target_dd
-                        selected_index: 0
-                        grid_cell_column_pos: 0
-                        grid_cell_column_span: 3
-                        grid_cell_row_pos: 3
+                            - if:
+                                condition:
+                                  lambda: 'return id(media_target_index) == 0;'
+                                then:
+                                  - lambda: |-
+                                      if (id(speaker_volume) < 10) {
+                                        id(speaker_volume) += 1;
+                                      }
+                                  - script.execute: set_volume
+                                else:
+                                  - homeassistant.action:
+                                      action: media_player.volume_up
+                                      data:
+                                        entity_id: !lambda 'return id(media_target);'
+                    # Music Assistant library browser entry point — see
+                    # CONFIGURATION.md and home_assistant/home_assistant/packages/music_library_browser.yaml.
+                    # Restyled from a bordered button: to a plain icon label:, matching
+                    # its transport/volume siblings above (none of which use button:
+                    # styling) instead of standing out as the only "chunky" control.
+                    - label:
+                        id: ico_mc_library
+                        text: "\U000F0333" #mdi music-box-multiple
+                        text_font: icon_font_55
+                        align: CENTER
+                        text_align: CENTER
+                        text_color: blue
+                        grid_cell_column_pos: 3
+                        grid_cell_row_pos: 2
                         grid_cell_x_align: STRETCH
-                        grid_cell_y_align: CENTER
-                        options:
-                          - "${media_target1_name}"
-                          - "${media_target2_name}"
-                          - "${media_target3_name}"
-                          - "${media_target4_name}"
-                          - "${media_target5_name}"
-                          - "${media_target6_name}"
-                          - "${media_target7_name}"
-                          - "${media_target8_name}"
-                        on_value:
+                        grid_cell_y_align: STRETCH
+                        on_click:
                           then:
-                            - lambda: 'id(media_target_index) = (int) x;'
-                            - script.execute: apply_media_target
-                            - script.execute: refresh_np
+                            - homeassistant.action:
+                                action: script.ma_browse_open_root
+                                data:
+                                  target: !lambda 'return id(media_target);'
+                            - lvgl.page.show: library_browse_page
               - label:
                   id: lbl_mc_playing
                   align: CENTER
@@ -11813,12 +11970,36 @@ lvgl:
                   long_mode: DOT
                   text: ""
                   y: -120
+              # Subtle "up next" indicator — light/dim color, right-aligned
+              # under the artist line, so it reads as a quiet hint rather than a
+              # second headline. Toggled via the "Show Up Next" setting
+              # (switch mc_show_next_track); shown/hidden by the next_track_title
+              # text_sensor's on_value (see the MUSIC LIBRARY BROWSER TEXT SENSORS
+              # block) whenever sensor.ma_next_track changes.
+              - label:
+                  id: lbl_mc_next
+                  hidden: true
+                  align: CENTER
+                  text_align: RIGHT
+                  text_font: my_font16
+                  text_color: 0xAAAAAA
+                  width: 100%
+                  pad_right: 15
+                  long_mode: DOT
+                  text: ""
+                  y: 40
+              # Volume-level bar hidden on this page per user request (was
+              # reading as an unexplained green line across the middle of the screen
+              # once repositioned to clear the new bottom control cluster). Left
+              # defined (not deleted) since set_volume's lvgl.bar.update: still
+              # targets it — updating a hidden bar's value is harmless.
               - bar:
                   id: bar_mc_volume
+                  hidden: true
                   align: CENTER
                   height: 4
                   width: 100%
-                  y: 85
+                  y: 35
                   styles: bg_color
                   bg_opa: TRANSP
                   indicator:
@@ -11826,6 +12007,1000 @@ lvgl:
                   value: 100
                   min_value: 0
                   max_value: 100
+    # Music Assistant library browser. Fixed 6-slot page (mirrors controls_page's
+    # slot convention rather than a dynamic list — this codebase has no dynamic/runtime
+    # LVGL widgets anywhere). State comes entirely from sensor.ma_browse_state (see the
+    # "MUSIC LIBRARY BROWSER TEXT SENSORS" block above and home_assistant/packages/music_library_browser.yaml)
+    # — this page never tracks browse state itself, it only renders what that sensor says.
+    - id: library_browse_page
+      skip: true
+      on_swipe_left:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - homeassistant.action:
+            action: script.ma_browse_next_page
+            data:
+              target: !lambda 'return id(media_target);'
+      on_swipe_right:
+        - lambda: 'lv_indev_wait_release(lv_indev_get_act());'
+        - homeassistant.action:
+            action: script.ma_browse_prev_page
+            data:
+              target: !lambda 'return id(media_target);'
+      widgets:
+        - obj:
+            styles: page_content
+            widgets:
+              - obj:
+                  align: TOP_MID
+                  styles: header_footer
+                  widgets:
+                    - label:
+                        id: lbl_lib_level_title
+                        text: 'Music Library'
+                        y: 3
+                        align: CENTER
+                        text_align: CENTER
+                        text_font: labelfont_large
+                        styles: label_text_color
+              - obj:
+                  align: CENTER
+                  width: 100%
+                  height: ${page_content_height}
+                  pad_all: 0
+                  bg_opa: TRANSP
+                  border_opa: TRANSP
+                  layout:
+                    type: FLEX
+                    flex_flow: COLUMN
+                  widgets:
+                    # A-Z jump strip: single row of plain clickable text labels
+                    # (not buttons — same pattern as Media Control's transport icons,
+                    # which are labels too) rather than 26 individual buttons across 2
+                    # rows. Precise taps don't matter here (worst case: land one letter
+                    # off), so trading touch-target size for a lot less vertical space
+                    # is the right call. Hidden on the root screen (Artists/Albums/
+                    # Playlists/etc.) — see lib_can_go_back's on_value, same condition
+                    # that shows/hides the Back button. See
+                    # home_assistant/packages/music_library_browser.yaml.
+                    - obj:
+                        id: obj_lib_letter_strip
+                        hidden: true
+                        width: 100%
+                        height: 50
+                        pad_all: 2
+                        bg_opa: TRANSP
+                        border_opa: TRANSP
+                        layout:
+                          type: GRID
+                          pad_row: 0
+                          pad_column: 0
+                          grid_columns: [FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1)]
+                          grid_rows: [FR(1)]
+                        widgets:
+                          - label:
+                              text: "A"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 0
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "A"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "B"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 1
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "B"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "C"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 2
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "C"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "D"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 3
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "D"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "E"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 4
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "E"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "F"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 5
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "F"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "G"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 6
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "G"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "H"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 7
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "H"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "I"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 8
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "I"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "J"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 9
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "J"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "K"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 10
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "K"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "L"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 11
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "L"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "M"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 12
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "M"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "N"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 13
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "N"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "O"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 14
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "O"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "P"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 15
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "P"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "Q"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 16
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "Q"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "R"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 17
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "R"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "S"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 18
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "S"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "T"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 19
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "T"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "U"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 20
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "U"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "V"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 21
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "V"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "W"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 22
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "W"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "X"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 23
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "X"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "Y"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 24
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "Y"
+                                        target: !lambda 'return id(media_target);'
+                          - label:
+                              text: "Z"
+                              text_font: my_font16
+                              text_color: 0xC0C0C0
+                              text_align: CENTER
+                              align: CENTER
+                              grid_cell_column_pos: 25
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_jump_letter
+                                      data:
+                                        letter: "Z"
+                                        target: !lambda 'return id(media_target);'
+                    - obj:
+                        width: 100%
+                        flex_grow: 1
+                        pad_all: 6
+                        bg_opa: TRANSP
+                        border_opa: TRANSP
+                        layout:
+                          pad_row: 6
+                          pad_column: 8
+                          type: GRID
+                          grid_columns: [FR(1), FR(1), FR(1)]
+                          grid_rows: [FR(1), FR(1), FR(1), FR(1), FR(1), FR(1), FR(1)]
+                        widgets:
+                          # Main row + a touching play icon on the right, made to
+                          # look like one control: a FLEX wrapper with zero gap, both
+                          # buttons sharing the same button_style, instead of two
+                          # separated grid cells.
+                          - obj:
+                              grid_cell_column_pos: 0
+                              grid_cell_column_span: 3
+                              grid_cell_row_pos: 0
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              bg_opa: TRANSP
+                              border_opa: TRANSP
+                              pad_all: 0
+                              layout:
+                                type: FLEX
+                                flex_flow: ROW
+                              widgets:
+                                - button:
+                                    id: but_lib_item1
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    flex_grow: 1
+                                    widgets:
+                                      - label:
+                                          id: ico_lib_item1
+                                          text: "\U000F0387" #music-note
+                                          text_font: icon_font_30
+                                          align: LEFT_MID
+                                          x: 10
+                                      - label:
+                                          id: lbl_lib_item1
+                                          text: ""
+                                          text_font: my_font16
+                                          align: LEFT_MID
+                                          x: 55
+                                          long_mode: DOT
+                                          width: 70%
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_select
+                                            data:
+                                              index: "1"
+                                              target: !lambda 'return id(media_target);'
+                                        - if:
+                                            condition:
+                                              lambda: 'return (id(lib_item1_can_expand).state == "off");'
+                                            then:
+                                              - lvgl.page.show: media_page
+                                - button:
+                                    id: but_lib_item1_play
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    width: 70
+                                    widgets:
+                                      - label:
+                                          text: "\U000F040E" #play
+                                          text_font: icon_font_30
+                                          align: CENTER
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_play_item
+                                            data:
+                                              index: "1"
+                                              target: !lambda 'return id(media_target);'
+                                        - lvgl.page.show: media_page
+                          - obj:
+                              grid_cell_column_pos: 0
+                              grid_cell_column_span: 3
+                              grid_cell_row_pos: 1
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              bg_opa: TRANSP
+                              border_opa: TRANSP
+                              pad_all: 0
+                              layout:
+                                type: FLEX
+                                flex_flow: ROW
+                              widgets:
+                                - button:
+                                    id: but_lib_item2
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    flex_grow: 1
+                                    widgets:
+                                      - label:
+                                          id: ico_lib_item2
+                                          text: "\U000F0387" #music-note
+                                          text_font: icon_font_30
+                                          align: LEFT_MID
+                                          x: 10
+                                      - label:
+                                          id: lbl_lib_item2
+                                          text: ""
+                                          text_font: my_font16
+                                          align: LEFT_MID
+                                          x: 55
+                                          long_mode: DOT
+                                          width: 70%
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_select
+                                            data:
+                                              index: "2"
+                                              target: !lambda 'return id(media_target);'
+                                        - if:
+                                            condition:
+                                              lambda: 'return (id(lib_item2_can_expand).state == "off");'
+                                            then:
+                                              - lvgl.page.show: media_page
+                                - button:
+                                    id: but_lib_item2_play
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    width: 70
+                                    widgets:
+                                      - label:
+                                          text: "\U000F040E" #play
+                                          text_font: icon_font_30
+                                          align: CENTER
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_play_item
+                                            data:
+                                              index: "2"
+                                              target: !lambda 'return id(media_target);'
+                                        - lvgl.page.show: media_page
+                          - obj:
+                              grid_cell_column_pos: 0
+                              grid_cell_column_span: 3
+                              grid_cell_row_pos: 2
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              bg_opa: TRANSP
+                              border_opa: TRANSP
+                              pad_all: 0
+                              layout:
+                                type: FLEX
+                                flex_flow: ROW
+                              widgets:
+                                - button:
+                                    id: but_lib_item3
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    flex_grow: 1
+                                    widgets:
+                                      - label:
+                                          id: ico_lib_item3
+                                          text: "\U000F0387" #music-note
+                                          text_font: icon_font_30
+                                          align: LEFT_MID
+                                          x: 10
+                                      - label:
+                                          id: lbl_lib_item3
+                                          text: ""
+                                          text_font: my_font16
+                                          align: LEFT_MID
+                                          x: 55
+                                          long_mode: DOT
+                                          width: 70%
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_select
+                                            data:
+                                              index: "3"
+                                              target: !lambda 'return id(media_target);'
+                                        - if:
+                                            condition:
+                                              lambda: 'return (id(lib_item3_can_expand).state == "off");'
+                                            then:
+                                              - lvgl.page.show: media_page
+                                - button:
+                                    id: but_lib_item3_play
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    width: 70
+                                    widgets:
+                                      - label:
+                                          text: "\U000F040E" #play
+                                          text_font: icon_font_30
+                                          align: CENTER
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_play_item
+                                            data:
+                                              index: "3"
+                                              target: !lambda 'return id(media_target);'
+                                        - lvgl.page.show: media_page
+                          - obj:
+                              grid_cell_column_pos: 0
+                              grid_cell_column_span: 3
+                              grid_cell_row_pos: 3
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              bg_opa: TRANSP
+                              border_opa: TRANSP
+                              pad_all: 0
+                              layout:
+                                type: FLEX
+                                flex_flow: ROW
+                              widgets:
+                                - button:
+                                    id: but_lib_item4
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    flex_grow: 1
+                                    widgets:
+                                      - label:
+                                          id: ico_lib_item4
+                                          text: "\U000F0387" #music-note
+                                          text_font: icon_font_30
+                                          align: LEFT_MID
+                                          x: 10
+                                      - label:
+                                          id: lbl_lib_item4
+                                          text: ""
+                                          text_font: my_font16
+                                          align: LEFT_MID
+                                          x: 55
+                                          long_mode: DOT
+                                          width: 70%
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_select
+                                            data:
+                                              index: "4"
+                                              target: !lambda 'return id(media_target);'
+                                        - if:
+                                            condition:
+                                              lambda: 'return (id(lib_item4_can_expand).state == "off");'
+                                            then:
+                                              - lvgl.page.show: media_page
+                                - button:
+                                    id: but_lib_item4_play
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    width: 70
+                                    widgets:
+                                      - label:
+                                          text: "\U000F040E" #play
+                                          text_font: icon_font_30
+                                          align: CENTER
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_play_item
+                                            data:
+                                              index: "4"
+                                              target: !lambda 'return id(media_target);'
+                                        - lvgl.page.show: media_page
+                          - obj:
+                              grid_cell_column_pos: 0
+                              grid_cell_column_span: 3
+                              grid_cell_row_pos: 4
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              bg_opa: TRANSP
+                              border_opa: TRANSP
+                              pad_all: 0
+                              layout:
+                                type: FLEX
+                                flex_flow: ROW
+                              widgets:
+                                - button:
+                                    id: but_lib_item5
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    flex_grow: 1
+                                    widgets:
+                                      - label:
+                                          id: ico_lib_item5
+                                          text: "\U000F0387" #music-note
+                                          text_font: icon_font_30
+                                          align: LEFT_MID
+                                          x: 10
+                                      - label:
+                                          id: lbl_lib_item5
+                                          text: ""
+                                          text_font: my_font16
+                                          align: LEFT_MID
+                                          x: 55
+                                          long_mode: DOT
+                                          width: 70%
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_select
+                                            data:
+                                              index: "5"
+                                              target: !lambda 'return id(media_target);'
+                                        - if:
+                                            condition:
+                                              lambda: 'return (id(lib_item5_can_expand).state == "off");'
+                                            then:
+                                              - lvgl.page.show: media_page
+                                - button:
+                                    id: but_lib_item5_play
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    width: 70
+                                    widgets:
+                                      - label:
+                                          text: "\U000F040E" #play
+                                          text_font: icon_font_30
+                                          align: CENTER
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_play_item
+                                            data:
+                                              index: "5"
+                                              target: !lambda 'return id(media_target);'
+                                        - lvgl.page.show: media_page
+                          - obj:
+                              grid_cell_column_pos: 0
+                              grid_cell_column_span: 3
+                              grid_cell_row_pos: 5
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              bg_opa: TRANSP
+                              border_opa: TRANSP
+                              pad_all: 0
+                              layout:
+                                type: FLEX
+                                flex_flow: ROW
+                              widgets:
+                                - button:
+                                    id: but_lib_item6
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    flex_grow: 1
+                                    widgets:
+                                      - label:
+                                          id: ico_lib_item6
+                                          text: "\U000F0387" #music-note
+                                          text_font: icon_font_30
+                                          align: LEFT_MID
+                                          x: 10
+                                      - label:
+                                          id: lbl_lib_item6
+                                          text: ""
+                                          text_font: my_font16
+                                          align: LEFT_MID
+                                          x: 55
+                                          long_mode: DOT
+                                          width: 70%
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_select
+                                            data:
+                                              index: "6"
+                                              target: !lambda 'return id(media_target);'
+                                        - if:
+                                            condition:
+                                              lambda: 'return (id(lib_item6_can_expand).state == "off");'
+                                            then:
+                                              - lvgl.page.show: media_page
+                                - button:
+                                    id: but_lib_item6_play
+                                    hidden: true
+                                    styles: button_style
+                                    pressed:
+                                      styles: button_pressed_style
+                                    width: 70
+                                    widgets:
+                                      - label:
+                                          text: "\U000F040E" #play
+                                          text_font: icon_font_30
+                                          align: CENTER
+                                    on_click:
+                                      then:
+                                        - homeassistant.action:
+                                            action: script.ma_browse_play_item
+                                            data:
+                                              index: "6"
+                                              target: !lambda 'return id(media_target);'
+                                        - lvgl.page.show: media_page
+                          - button:
+                              id: but_lib_back
+                              hidden: true
+                              styles: button_style
+                              pressed:
+                                styles: button_pressed_style
+                              grid_cell_column_pos: 0
+                              grid_cell_row_pos: 6
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              widgets:
+                                - label:
+                                    text: "\U000F0731" #arrow-left-bold
+                                    text_font: icon_font_30
+                                    align: CENTER
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_back
+                                      data:
+                                        target: !lambda 'return id(media_target);'
+                          - button:
+                              id: but_lib_prev
+                              hidden: true
+                              styles: button_style
+                              pressed:
+                                styles: button_pressed_style
+                              grid_cell_column_pos: 1
+                              grid_cell_row_pos: 6
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              widgets:
+                                - label:
+                                    text: "\U000F0141" #chevron-left
+                                    text_font: icon_font_30
+                                    align: CENTER
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_prev_page
+                                      data:
+                                        target: !lambda 'return id(media_target);'
+                          - button:
+                              id: but_lib_next
+                              hidden: true
+                              styles: button_style
+                              pressed:
+                                styles: button_pressed_style
+                              grid_cell_column_pos: 2
+                              grid_cell_row_pos: 6
+                              grid_cell_x_align: STRETCH
+                              grid_cell_y_align: STRETCH
+                              widgets:
+                                - label:
+                                    text: "\U000F0142" #chevron-right
+                                    text_font: icon_font_30
+                                    align: CENTER
+                              on_click:
+                                then:
+                                  - homeassistant.action:
+                                      action: script.ma_browse_next_page
+                                      data:
+                                        target: !lambda 'return id(media_target);'
     - id: scenes_page
       skip: ${scenes_page_hide_from_navigation}
       on_swipe_left:
@@ -13366,6 +14541,35 @@ lvgl:
                         on_long_press:
                           - lvgl.page.show: ui_set_page
 
+                    - label:
+                        text: "Media"
+                        align: CENTER
+                        text_align: CENTER
+                        styles: label_text_color
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                    - button:
+                        id: but_settings_6
+                        styles: button_style
+                        pressed:
+                          styles: button_pressed_style
+                        checked:
+                          styles: button_checked_style
+                        grid_cell_column_pos: 2
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: STRETCH
+                        widgets:
+                          - label:
+                              id: ico_settings_6
+                              align: CENTER
+                              text_font: icon_font_55
+                              text: "\U000F04C3"
+                        on_long_press:
+                          - lvgl.page.show: media_set_page
+
     - id: voice_set_page
       skip: true
       widgets:
@@ -13569,6 +14773,121 @@ lvgl:
                         grid_cell_y_align: CENTER
                         on_change:
                           switch.toggle: s_saver_mode
+
+    - id: media_set_page
+      skip: true
+      on_load:
+        then:
+          - lvgl.dropdown.update:
+              id: media_target_dd_settings
+              selected_index: !lambda 'return id(media_target_index);'
+          # Up Next / Library options only apply with Music Assistant support enabled.
+          - if:
+              condition:
+                lambda: 'return ${media_music_assistant};'
+              then:
+                - lvgl.widget.show: chk_mc_show_next_track
+                - lvgl.widget.show: chk_mc_show_library
+              else:
+                - lvgl.widget.hide: chk_mc_show_next_track
+                - lvgl.widget.hide: chk_mc_show_library
+      widgets:
+        - obj:
+            styles: page_content
+            widgets:
+              - obj:
+                  align: TOP_MID
+                  styles: header_footer
+                  widgets:
+                    - label:
+                        text: "Media Control"
+                        y: 3
+                        align: CENTER
+                        text_align: CENTER
+                        styles: label_text_color
+              - obj:
+                  align: CENTER
+                  width: 100%
+                  height: 270
+                  pad_all: 6
+                  bg_opa: TRANSP
+                  border_opa: TRANSP
+                  layout:
+                    pad_row: 6
+                    pad_column: 8
+                    type: GRID
+                    grid_columns: [FR(1), FR(1)]
+                    grid_rows: [FR(25), FR(25), FR(25), FR(25)]
+                  widgets:
+                    - checkbox:
+                        id: chk_mc_hide_speaker_select
+                        text: "Hide Speaker Selection"
+                        align: LEFT_MID
+                        text_align: LEFT
+                        styles: label_text_color
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 0
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        on_change:
+                          switch.toggle: mc_hide_speaker_select
+                    - label:
+                        text: "Playback Device"
+                        align: LEFT_MID
+                        text_align: LEFT
+                        styles: label_text_color
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: CENTER
+                    - dropdown:
+                        id: media_target_dd_settings
+                        selected_index: 0
+                        grid_cell_column_pos: 1
+                        grid_cell_row_pos: 1
+                        grid_cell_x_align: STRETCH
+                        grid_cell_y_align: CENTER
+                        options:
+                          - "${media_target1_name}"
+                          - "${media_target2_name}"
+                          - "${media_target3_name}"
+                          - "${media_target4_name}"
+                          - "${media_target5_name}"
+                          - "${media_target6_name}"
+                          - "${media_target7_name}"
+                          - "${media_target8_name}"
+                        on_change:
+                          then:
+                            - lambda: 'id(media_target_index) = (int) x;'
+                            - script.execute: apply_media_target
+                            - script.execute: refresh_np
+                            - lvgl.dropdown.update:
+                                id: media_target_dd
+                                selected_index: !lambda 'return id(media_target_index);'
+                    - checkbox:
+                        id: chk_mc_show_next_track
+                        text: "Show Up Next"
+                        align: LEFT_MID
+                        text_align: LEFT
+                        styles: label_text_color
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 2
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        on_change:
+                          switch.toggle: mc_show_next_track
+                    - checkbox:
+                        id: chk_mc_show_library
+                        text: "Show Library Browser"
+                        align: LEFT_MID
+                        text_align: LEFT
+                        styles: label_text_color
+                        grid_cell_column_pos: 0
+                        grid_cell_row_pos: 3
+                        grid_cell_x_align: CENTER
+                        grid_cell_y_align: CENTER
+                        on_change:
+                          switch.toggle: mc_show_library
 
     - id: timeout_settings_page
       skip: true

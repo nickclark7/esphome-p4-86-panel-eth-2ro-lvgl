@@ -1,0 +1,577 @@
+# Music Assistant library browser for the panel's media page (`library_browse_page`).
+# Part of the optional Music Assistant extras - enable with media_music_assistant: "true"
+# in the ESPHome config. Setup is in CONFIGURATION.md ("Media page").
+#
+# Needs: the Music Assistant integration, `python_script:` enabled in configuration.yaml
+# with ../python_scripts/ma_browse_fire_event.py copied to your python_scripts folder,
+# and this file loaded as a package.
+#
+# input_boolean.ma_browse_fix_library_sort ("Fix Sorting") works around Music Assistant
+# ordering Artists/Albums/Playlists/Tracks by an internal sort name (e.g. "Rose,
+# Elizabeth") instead of the displayed name. It re-sorts server-side, which is slower on
+# large libraries, so it is off by default.
+#
+# Note: one browse state is shared by every panel using this package.
+#
+# Contract: sensor.ma_browse_state is the single source of truth for "what's on screen."
+# Every navigation script re-derives its starting point from that sensor's own last-fired
+# attributes (no separate cache), calls media_player.browse_media fresh via
+# response_variable, slices to 6 items, and fires ma_browse_updated with a fully flattened
+# payload: item1..6_{title,id,type,can_expand}, level_title/level_type/level_id,
+# page_offset, parent_stack, can_go_back, has_next_page, has_prev_page.
+# ESPHome reads each fact as `text_sensor: platform: homeassistant, attribute: <name>`.
+
+input_boolean:
+  ma_browse_fix_library_sort:
+    name: "Music Library: Fix Sorting"
+    icon: mdi:sort-alphabetical-variant
+
+template:
+  - trigger:
+      - trigger: event
+        event_type: ma_browse_updated
+    sensor:
+      - name: "MA Browse State"
+        unique_id: ma_browse_state_v2
+        state: "{{ trigger.event.data.level_title }}"
+        attributes:
+          level_type: "{{ trigger.event.data.level_type }}"
+          level_id: "{{ trigger.event.data.level_id }}"
+          page_offset: "{{ trigger.event.data.page_offset }}"
+          can_go_back: "{{ trigger.event.data.can_go_back }}"
+          has_next_page: "{{ trigger.event.data.has_next_page }}"
+          has_prev_page: "{{ trigger.event.data.has_prev_page }}"
+          parent_stack: "{{ trigger.event.data.parent_stack }}"
+          item1_title: "{{ trigger.event.data.item1_title }}"
+          item1_id: "{{ trigger.event.data.item1_id }}"
+          item1_type: "{{ trigger.event.data.item1_type }}"
+          item1_can_expand: "{{ trigger.event.data.item1_can_expand }}"
+          item2_title: "{{ trigger.event.data.item2_title }}"
+          item2_id: "{{ trigger.event.data.item2_id }}"
+          item2_type: "{{ trigger.event.data.item2_type }}"
+          item2_can_expand: "{{ trigger.event.data.item2_can_expand }}"
+          item3_title: "{{ trigger.event.data.item3_title }}"
+          item3_id: "{{ trigger.event.data.item3_id }}"
+          item3_type: "{{ trigger.event.data.item3_type }}"
+          item3_can_expand: "{{ trigger.event.data.item3_can_expand }}"
+          item4_title: "{{ trigger.event.data.item4_title }}"
+          item4_id: "{{ trigger.event.data.item4_id }}"
+          item4_type: "{{ trigger.event.data.item4_type }}"
+          item4_can_expand: "{{ trigger.event.data.item4_can_expand }}"
+          item5_title: "{{ trigger.event.data.item5_title }}"
+          item5_id: "{{ trigger.event.data.item5_id }}"
+          item5_type: "{{ trigger.event.data.item5_type }}"
+          item5_can_expand: "{{ trigger.event.data.item5_can_expand }}"
+          item6_title: "{{ trigger.event.data.item6_title }}"
+          item6_id: "{{ trigger.event.data.item6_id }}"
+          item6_type: "{{ trigger.event.data.item6_type }}"
+          item6_can_expand: "{{ trigger.event.data.item6_can_expand }}"
+
+script:
+  ma_browse_render_lvl:
+    alias: "MA Browse: render a level (internal)"
+    mode: restart
+    sequence:
+      - variables:
+          # "Fix Sorting" (input_boolean.ma_browse_fix_library_sort). Root-level Artists/Albums/Playlists/Tracks via
+          # media_player.browse_media come back ordered by an MA-internal "sort_name"
+          # that's never exposed as data (confirmed live: artist "Elizabeth Rose"
+          # jumps from between "EFF"/"Emma Louise" to between "ROM"/"RÜFÜS DU SOL"
+          # when explicitly asking music_assistant.get_library to order_by sort_name
+          # instead of name — same misplacement the user originally reported, just
+          # reproduced deliberately). That same get_library service defaults to
+          # plain display-name order with no such misplacement, but only lists root
+          # categories — it can't drill into a specific artist/album/playlist's
+          # contents, so this only ever applies at exactly these four level_ids.
+          lib_media_type: "{{ 'artist' if level_id == 'artists' else ('album' if level_id == 'albums' else ('playlist' if level_id == 'playlists' else ('track' if level_id == 'tracks' else ''))) }}"
+      - choose:
+          - conditions: "{{ (lib_media_type | length > 0) and (is_state('input_boolean.ma_browse_fix_library_sort', 'on')) }}"
+            sequence:
+              # An artist credited only as a featured/collaborating artist on
+              # someone else's track (e.g. "Allan Kingdom" on Flume's "You Know", from
+              # the album "Skin" — album-level artists: just ["Flume"]) still shows up
+              # in the raw artist list, but drilling into them returns zero children
+              # (MA's browse hierarchy is built on album-level primary attribution, not
+              # track-level featured credits) — an empty, confusing "folder". Now that
+              # drilling into an artist also surfaces their loose primary-artist tracks
+              # (see the dedicated artist-drill-in branch below), the list itself is
+              # widened to match: an artist counts as having content if they're the
+              # PRIMARY (first-listed) artist of an ALBUM *or* a TRACK, not any
+              # co-credited artist — a handful of albums credit two artists (e.g. "I
+              # Didn't Believe": Flight Facilities primary, Elizabeth Rose co-credited)
+              # and on a screen this small, one clear owner beats every co-artist
+              # getting a listing. Computed FIRST (before the main listing fetch below)
+              # since that fetch's own per-item filtering needs primary_artist_ids
+              # already available.
+              - if: "{{ lib_media_type == 'artist' }}"
+                then:
+                  - action: music_assistant.get_library
+                    data:
+                      config_entry_id: "{{ config_entry_id(target) }}"
+                      media_type: album
+                      limit: 500
+                    response_variable: albums_for_artist_filter
+                  - variables:
+                      # HA caps a single template's rendered output at 256KB.
+                      # Accumulating all 1107 tracks' full objects (each with nested
+                      # album/artist/image data) across pages before processing blew
+                      # straight through that (confirmed live: "Template output
+                      # exceeded maximum size of 262144 characters"). Fix: reduce each
+                      # page down to just the short artist-URI list immediately, inside
+                      # the same step that fetches it — the running accumulator never
+                      # holds more than ~len(unique artists) short strings, regardless
+                      # of how many tracks get scanned along the way. Seeded with the
+                      # album-derived URIs so the loop below just keeps adding to it.
+                      primary_artist_ids_json: >
+                        {% set ns2 = namespace(ids=[]) %}
+                        {% for alb in albums_for_artist_filter['items'] | default([]) %}
+                        {% if (alb.artists | default([]) | count) > 0 %}
+                        {% set primary_uri = alb.artists[0].uri %}
+                        {% if primary_uri not in ns2.ids %}
+                        {% set ns2.ids = ns2.ids + [primary_uri] %}
+                        {% endif %}
+                        {% endif %}
+                        {% endfor %}
+                        {{ ns2.ids | tojson }}
+                      track_page_offset: 0
+                      more_track_pages: true
+                  - repeat:
+                      while: "{{ more_track_pages }}"
+                      sequence:
+                        - action: music_assistant.get_library
+                          data:
+                            config_entry_id: "{{ config_entry_id(target) }}"
+                            media_type: track
+                            limit: 500
+                            offset: "{{ track_page_offset }}"
+                          response_variable: track_page_result
+                        - variables:
+                            primary_artist_ids_json: >
+                              {% set ns3 = namespace(ids=(primary_artist_ids_json | trim | from_json)) %}
+                              {% for tr in track_page_result['items'] | default([]) %}
+                              {% if (tr.artists | default([]) | count) > 0 %}
+                              {% set primary_uri = tr.artists[0].uri %}
+                              {% if primary_uri not in ns3.ids %}
+                              {% set ns3.ids = ns3.ids + [primary_uri] %}
+                              {% endif %}
+                              {% endif %}
+                              {% endfor %}
+                              {{ ns3.ids | tojson }}
+                            more_track_pages: "{{ (track_page_result['items'] | default([]) | count) == 500 }}"
+                            track_page_offset: "{{ track_page_offset + 500 }}"
+                  - variables:
+                      primary_artist_ids: "{{ (primary_artist_ids_json | trim) | from_json }}"
+              # get_library caps at 500 items/call — this library alone has 1107
+              # tracks, so a single un-paginated call was silently missing everything
+              # past the 500th (whatever get_library's own default order put there).
+              # Confirmed live: jump-to-letter for any letter past roughly the library's
+              # midpoint fell through to whatever the 500th item happened to be (here,
+              # stray Cyrillic-titled tracks) since no genuine match for later letters
+              # was ever fetched in the first place — not a sorting bug, a missing-data
+              # one. Paginated like the primary-artist-ids fetch above, and for the same
+              # reason reduces each page to the final small display dict immediately
+              # (title/sort_key/type/id/can_expand only) rather than accumulating raw
+              # items, to stay under HA's 256KB template output cap regardless of
+              # library size. get_library's own order (name-based, when no order_by is
+              # given) sorts by the BARE field it was asked for — album/track name, not
+              # "Name - Artist" — and since titles get reformatted below (matching
+              # browse_media's own "artist follows title" convention chosen for this
+              # screen specifically, since it's browsed BY the item's own name), the
+              # list order and displayed text wouldn't correlate if left as get_library
+              # returned it — confirmed live, looked completely unsorted. Sorting by a
+              # separate sort_key (the bare track/album name, computed alongside title
+              # but never itself artist-prefixed) after collecting every page fixes
+              # that. Artists/Playlists have no such prefix, so their sort_key is just
+              # their own title — unaffected. Tracks are also the one leaf type here —
+              # can_expand: false so tapping a row plays it directly instead of trying
+              # to drill in (matches a real leaf track from browse_media).
+              - action: music_assistant.get_library
+                data:
+                  config_entry_id: "{{ config_entry_id(target) }}"
+                  media_type: "{{ lib_media_type }}"
+                  limit: 500
+                  offset: 0
+                response_variable: lib_page_result
+              - variables:
+                  lib_reduced_items_json: >
+                    {% set ns = namespace(items=[]) %}
+                    {% for it in lib_page_result['items'] | default([]) %}
+                    {% set include_row = (it.uri in primary_artist_ids) if lib_media_type == 'artist' else true %}
+                    {% if include_row %}
+                    {% set bare_name = it.name | trim %}
+                    {% if lib_media_type in ['album', 'track'] %}
+                    {% set artist_name = (it.artists[0].name | trim) if (it.artists | default([]) | count) > 0 else '' %}
+                    {% set disp_title = (bare_name ~ ' - ' ~ artist_name) if artist_name else bare_name %}
+                    {% else %}
+                    {% set disp_title = bare_name %}
+                    {% endif %}
+                    {% set strip_key = bare_name | upper %}
+                    {% set strip_key = strip_key[4:] if strip_key.startswith('THE ') else strip_key %}
+                    {% set strip_key = strip_key[2:] if strip_key.startswith('A ') else strip_key %}
+                    {% set strip_key = strip_key[3:] if strip_key.startswith('AN ') else strip_key %}
+                    {% set ns.items = ns.items + [{'title': disp_title, 'sort_key': strip_key, 'media_content_type': 'music', 'media_content_id': it.uri, 'can_expand': lib_media_type != 'track'}] %}
+                    {% endif %}
+                    {% endfor %}
+                    {{ ns.items | tojson }}
+                  lib_page_offset: 500
+                  more_lib_pages: "{{ (lib_page_result['items'] | default([]) | count) == 500 }}"
+              - repeat:
+                  while: "{{ more_lib_pages }}"
+                  sequence:
+                    - action: music_assistant.get_library
+                      data:
+                        config_entry_id: "{{ config_entry_id(target) }}"
+                        media_type: "{{ lib_media_type }}"
+                        limit: 500
+                        offset: "{{ lib_page_offset }}"
+                      response_variable: lib_page_result
+                    - variables:
+                        lib_reduced_items_json: >
+                          {% set ns = namespace(items=(lib_reduced_items_json | trim | from_json)) %}
+                          {% for it in lib_page_result['items'] | default([]) %}
+                          {% set include_row = (it.uri in primary_artist_ids) if lib_media_type == 'artist' else true %}
+                          {% if include_row %}
+                          {% set bare_name = it.name | trim %}
+                          {% if lib_media_type in ['album', 'track'] %}
+                          {% set artist_name = (it.artists[0].name | trim) if (it.artists | default([]) | count) > 0 else '' %}
+                          {% set disp_title = (bare_name ~ ' - ' ~ artist_name) if artist_name else bare_name %}
+                          {% else %}
+                          {% set disp_title = bare_name %}
+                          {% endif %}
+                          {% set strip_key = bare_name | upper %}
+                          {% set strip_key = strip_key[4:] if strip_key.startswith('THE ') else strip_key %}
+                          {% set strip_key = strip_key[2:] if strip_key.startswith('A ') else strip_key %}
+                          {% set strip_key = strip_key[3:] if strip_key.startswith('AN ') else strip_key %}
+                          {% set ns.items = ns.items + [{'title': disp_title, 'sort_key': strip_key, 'media_content_type': 'music', 'media_content_id': it.uri, 'can_expand': lib_media_type != 'track'}] %}
+                          {% endif %}
+                          {% endfor %}
+                          {{ ns.items | tojson }}
+                        more_lib_pages: "{{ (lib_page_result['items'] | default([]) | count) == 500 }}"
+                        lib_page_offset: "{{ lib_page_offset + 500 }}"
+              - variables:
+                  all_children_json: "{{ ((lib_reduced_items_json | trim | from_json) | sort(attribute='sort_key', case_sensitive=false)) | tojson }}"
+          # Drilling into a specific artist: browse_media alone only ever shows
+          # their own albums (MA's artist hierarchy is album-only) — a real album+loose
+          # co-credited/featured-track combination (e.g. an artist with albums of their
+          # own AND a one-off primary-artist track buried on someone else's compilation,
+          # like "Hit Machine, Vol. 27") would otherwise hide the loose track entirely.
+          # Merge: real albums (still via browse_media, unchanged) first, then any track
+          # where this artist is the PRIMARY artist and it isn't already reachable via
+          # one of their own albums (skip duplicates) — searched by name since
+          # get_library has no "tracks by artist ID" filter, filtered afterward to an
+          # exact URI match on the primary artist for precision (a name-only match risks
+          # false positives/negatives). Each block sorted alphabetically, albums first.
+          - conditions: "{{ level_id.startswith('library://artist/') and (is_state('input_boolean.ma_browse_fix_library_sort', 'on')) }}"
+            sequence:
+              - action: media_player.browse_media
+                target:
+                  entity_id: "{{ target }}"
+                data:
+                  media_content_type: "{{ level_type }}"
+                  media_content_id: "{{ level_id }}"
+                response_variable: browse_result
+              - action: music_assistant.get_library
+                data:
+                  config_entry_id: "{{ config_entry_id(target) }}"
+                  media_type: track
+                  search: "{{ level_title }}"
+                  limit: 500
+                response_variable: artist_tracks_result
+              - variables:
+                  all_children_json: >
+                    {% set ns_albums = namespace(items=[]) %}
+                    {% for c in browse_result[target].children | default([]) %}
+                    {% set ns_albums.items = ns_albums.items + [{'title': c.title, 'media_content_type': c.media_content_type, 'media_content_id': c.media_content_id, 'can_expand': c.can_expand}] %}
+                    {% endfor %}
+                    {% set owned_album_ids = ns_albums.items | map(attribute='media_content_id') | list %}
+                    {% set ns_loose = namespace(items=[]) %}
+                    {% for tr in artist_tracks_result['items'] | default([]) %}
+                    {% set primary_uri = tr.artists[0].uri if (tr.artists | default([]) | count) > 0 else '' %}
+                    {% if primary_uri == level_id %}
+                    {% set alb_uri = (tr.album.uri if (tr.album is defined and tr.album) else '') %}
+                    {% if alb_uri not in owned_album_ids %}
+                    {% set disp_title = (tr.artists[0].name | trim) ~ ' - ' ~ (tr.name | trim) %}
+                    {% set ns_loose.items = ns_loose.items + [{'title': disp_title, 'media_content_type': 'music', 'media_content_id': tr.uri, 'can_expand': false}] %}
+                    {% endif %}
+                    {% endif %}
+                    {% endfor %}
+                    {% set sorted_albums = ns_albums.items | sort(attribute='title', case_sensitive=false) %}
+                    {% set sorted_loose = ns_loose.items | sort(attribute='title', case_sensitive=false) %}
+                    {{ (sorted_albums + sorted_loose) | tojson }}
+          - conditions: "{{ level_id | string | length > 0 }}"
+            sequence:
+              - action: media_player.browse_media
+                target:
+                  entity_id: "{{ target }}"
+                data:
+                  media_content_type: "{{ level_type }}"
+                  media_content_id: "{{ level_id }}"
+                response_variable: browse_result
+              - variables:
+                  all_children_json: >
+                    {% set ns = namespace(items=[]) %}
+                    {% for c in browse_result[target].children | default([]) %}
+                    {% set ns.items = ns.items + [c.as_dict()] %}
+                    {% endfor %}
+                    {{ ns.items | tojson }}
+        default:
+          - action: media_player.browse_media
+            target:
+              entity_id: "{{ target }}"
+            response_variable: browse_result
+          - variables:
+              # response_variable on a targeted service call is keyed by entity_id (confirmed
+              # live), and browse_result[target] is a live BrowseMedia object. HA only recovers
+              # a template's real Python type (list/dict/bool/etc.) from rendered text when the
+              # template is a BARE single {{ expression }} with no {% %} statement tags — confirmed
+              # live: a `{% set %}`/`{% for %}` accumulator template always renders to a plain
+              # string, even though the visible output looked like a list repr (all_children came
+              # back as a 6089-char STRING here, and every "[...]" index/slice on it was silently
+              # doing STRING indexing, not list indexing, the whole time). Fix: do the control-flow
+              # accumulation into a JSON string (`| tojson`, using .as_dict() per child since that's
+              # what BrowseMedia exposes for the frontend WS API, so it's JSON-safe), then recover
+              # real data with a SEPARATE bare-expression step (`| from_json`), which does qualify
+              # for native-type recovery.
+              all_children_json: >
+                {% set ns = namespace(items=[]) %}
+                {% for c in browse_result[target].children | default([]) %}
+                {% set ns.items = ns.items + [c.as_dict()] %}
+                {% endfor %}
+                {{ ns.items | tojson }}
+      - variables:
+          # trim: the YAML folded (>) block above joins lines with spaces and adds a
+          # trailing newline, so an empty result renders as " []\n" rather than a bare
+          # "[]" — confirmed live (an empty folder, e.g. a favorites-based playlist with
+          # zero favorited tracks, raised "from_json got invalid input '[]'" without this).
+          all_children: "{{ (all_children_json | trim) | from_json }}"
+      - variables:
+          # jump_letter (optional): find the first child whose SORT key (not
+          # necessarily its displayed title) starts at or after that letter, and jump
+          # straight there. get_library-sourced items (Artists/Albums/Playlists/
+          # Tracks) carry a sort_key that's ALREADY article-stripped and uppercased at
+          # the source (see all_children_json above) — critically, that's also the key
+          # the LIST ITSELF is sorted by, not just this jump comparison. Stripping only
+          # here, while the list stayed sorted by the literal name, was a real bug:
+          # e.g. "A Simple Motion" sorts under A either way, but its stripped form
+          # ("SIMPLE MOTION") satisfies a jump to "S" — walking the A-sorted list would
+          # hit that false positive before ever reaching genuine S-titled tracks
+          # further down, and stop there (confirmed live). Re-stripping sort_key here
+          # is now a harmless no-op (it's already stripped) — kept for the OTHER two
+          # branches (drilled-in browse_media results, and the artist-merge branch),
+          # whose items have no separate sort_key and fall back to title, which does
+          # still need stripping on the fly. Same "control-flow block renders to a
+          # whitespace-padded STRING, not a real int" issue as all_children above —
+          # computed into a raw string here, then forced through the `int` filter
+          # (robust to whitespace, unlike from_json) in a separate bare-expression
+          # step below.
+          jump_offset_raw: >
+            {% if (jump_letter | default('')) | length > 0 %}
+              {% set ns = namespace(idx=-1) %}
+              {% for c in all_children %}
+                {% set t = (c.sort_key if c.sort_key is defined else (c.title | default(''))) | upper %}
+                {% set t = t[4:] if t.startswith('THE ') else t %}
+                {% set t = t[2:] if t.startswith('A ') else t %}
+                {% set t = t[3:] if t.startswith('AN ') else t %}
+                {% if ns.idx == -1 and ((t | first) | default('')) >= (jump_letter | upper) %}
+                  {% set ns.idx = loop.index0 %}
+                {% endif %}
+              {% endfor %}
+              {{ ns.idx if ns.idx != -1 else ((all_children | count) - 1) }}
+            {% else %}
+              {{ page_offset }}
+            {% endif %}
+      - variables:
+          offset: "{{ max(0, jump_offset_raw | int(0)) }}"
+      - variables:
+          offset_end: "{{ offset + 6 }}"
+      - variables:
+          page_items: "{{ all_children[offset:offset_end] }}"
+      - variables:
+          item1: "{{ page_items[0] if page_items | count > 0 else None }}"
+          item2: "{{ page_items[1] if page_items | count > 1 else None }}"
+          item3: "{{ page_items[2] if page_items | count > 2 else None }}"
+          item4: "{{ page_items[3] if page_items | count > 3 else None }}"
+          item5: "{{ page_items[4] if page_items | count > 4 else None }}"
+          item6: "{{ page_items[5] if page_items | count > 5 else None }}"
+      - action: python_script.ma_browse_fire_event
+        data:
+            level_type: "{{ level_type }}"
+            level_id: "{{ level_id }}"
+            level_title: "{{ level_title }}"
+            page_offset: "{{ offset }}"
+            parent_stack: "{{ parent_stack }}"
+            can_go_back: "{{ (parent_stack | count) > 0 }}"
+            has_next_page: "{{ (all_children | count) > offset_end }}"
+            has_prev_page: "{{ offset > 0 }}"
+            item1_title: "{{ item1.title if item1 else '' }}"
+            item1_id: "{{ item1.media_content_id if item1 else '' }}"
+            item1_type: "{{ item1.media_content_type if item1 else '' }}"
+            item1_can_expand: "{{ (item1.can_expand if item1 else false) | bool(false) }}"
+            item2_title: "{{ item2.title if item2 else '' }}"
+            item2_id: "{{ item2.media_content_id if item2 else '' }}"
+            item2_type: "{{ item2.media_content_type if item2 else '' }}"
+            item2_can_expand: "{{ (item2.can_expand if item2 else false) | bool(false) }}"
+            item3_title: "{{ item3.title if item3 else '' }}"
+            item3_id: "{{ item3.media_content_id if item3 else '' }}"
+            item3_type: "{{ item3.media_content_type if item3 else '' }}"
+            item3_can_expand: "{{ (item3.can_expand if item3 else false) | bool(false) }}"
+            item4_title: "{{ item4.title if item4 else '' }}"
+            item4_id: "{{ item4.media_content_id if item4 else '' }}"
+            item4_type: "{{ item4.media_content_type if item4 else '' }}"
+            item4_can_expand: "{{ (item4.can_expand if item4 else false) | bool(false) }}"
+            item5_title: "{{ item5.title if item5 else '' }}"
+            item5_id: "{{ item5.media_content_id if item5 else '' }}"
+            item5_type: "{{ item5.media_content_type if item5 else '' }}"
+            item5_can_expand: "{{ (item5.can_expand if item5 else false) | bool(false) }}"
+            item6_title: "{{ item6.title if item6 else '' }}"
+            item6_id: "{{ item6.media_content_id if item6 else '' }}"
+            item6_type: "{{ item6.media_content_type if item6 else '' }}"
+            item6_can_expand: "{{ (item6.can_expand if item6 else false) | bool(false) }}"
+
+  ma_browse_open_root:
+    alias: "MA Browse: open root"
+    mode: restart
+    sequence:
+      - action: script.ma_browse_render_lvl
+        data:
+          level_type: ""
+          level_id: ""
+          level_title: "Music Library"
+          page_offset: 0
+          parent_stack: []
+          target: "{{ target }}"
+
+  ma_browse_select:
+    alias: "MA Browse: select item (drill in or play)"
+    mode: restart
+    sequence:
+      - variables:
+          sel_title: "{{ state_attr('sensor.ma_browse_state', 'item' ~ index ~ '_title') }}"
+          sel_id: "{{ state_attr('sensor.ma_browse_state', 'item' ~ index ~ '_id') }}"
+          sel_type: "{{ state_attr('sensor.ma_browse_state', 'item' ~ index ~ '_type') }}"
+          sel_can_expand: "{{ state_attr('sensor.ma_browse_state', 'item' ~ index ~ '_can_expand') | bool(false) }}"
+          cur_stack: "{{ state_attr('sensor.ma_browse_state', 'parent_stack') | default([]) }}"
+          cur_type: "{{ state_attr('sensor.ma_browse_state', 'level_type') }}"
+          cur_id: "{{ state_attr('sensor.ma_browse_state', 'level_id') }}"
+          cur_title: "{{ states('sensor.ma_browse_state') }}"
+      - if: "{{ sel_id | string | length > 0 }}"
+        then:
+          - if: "{{ sel_can_expand }}"
+            then:
+              - action: script.ma_browse_render_lvl
+                data:
+                  level_type: "{{ sel_type }}"
+                  level_id: "{{ sel_id }}"
+                  level_title: "{{ sel_title }}"
+                  page_offset: 0
+                  parent_stack: "{{ cur_stack + [{'type': cur_type, 'id': cur_id, 'title': cur_title}] }}"
+                  target: "{{ target }}"
+            else:
+              - action: media_player.play_media
+                target:
+                  entity_id: "{{ target }}"
+                data:
+                  media_content_type: "{{ sel_type }}"
+                  media_content_id: "{{ sel_id }}"
+
+  ma_browse_back:
+    alias: "MA Browse: back to parent level"
+    mode: restart
+    sequence:
+      - variables:
+          cur_stack: "{{ state_attr('sensor.ma_browse_state', 'parent_stack') | default([]) }}"
+      - if: "{{ cur_stack | count > 0 }}"
+        then:
+          - variables:
+              parent_level: "{{ cur_stack[-1] }}"
+              new_stack: "{{ cur_stack[:-1] }}"
+          - action: script.ma_browse_render_lvl
+            data:
+              level_type: "{{ parent_level.type }}"
+              level_id: "{{ parent_level.id }}"
+              level_title: "{{ parent_level.title }}"
+              page_offset: 0
+              parent_stack: "{{ new_stack }}"
+              target: "{{ target }}"
+        else:
+          - action: script.ma_browse_open_root
+            data:
+              target: "{{ target }}"
+
+  ma_browse_next_page:
+    alias: "MA Browse: next page (same level)"
+    mode: restart
+    sequence:
+      - action: script.ma_browse_render_lvl
+        data:
+          level_type: "{{ state_attr('sensor.ma_browse_state', 'level_type') }}"
+          level_id: "{{ state_attr('sensor.ma_browse_state', 'level_id') }}"
+          level_title: "{{ states('sensor.ma_browse_state') }}"
+          page_offset: "{{ (state_attr('sensor.ma_browse_state', 'page_offset') | int(0)) + 6 }}"
+          parent_stack: "{{ state_attr('sensor.ma_browse_state', 'parent_stack') | default([]) }}"
+          target: "{{ target }}"
+
+  ma_browse_prev_page:
+    alias: "MA Browse: previous page (same level)"
+    mode: restart
+    sequence:
+      - action: script.ma_browse_render_lvl
+        data:
+          level_type: "{{ state_attr('sensor.ma_browse_state', 'level_type') }}"
+          level_id: "{{ state_attr('sensor.ma_browse_state', 'level_id') }}"
+          level_title: "{{ states('sensor.ma_browse_state') }}"
+          page_offset: "{{ max(0, (state_attr('sensor.ma_browse_state', 'page_offset') | int(0)) - 6) }}"
+          parent_stack: "{{ state_attr('sensor.ma_browse_state', 'parent_stack') | default([]) }}"
+          target: "{{ target }}"
+
+  ma_browse_play_level:
+    alias: "MA Browse: play current level (whole album/artist/playlist)"
+    mode: restart
+    sequence:
+      - variables:
+          cur_type: "{{ state_attr('sensor.ma_browse_state', 'level_type') }}"
+          cur_id: "{{ state_attr('sensor.ma_browse_state', 'level_id') }}"
+      # Confirmed live: media_player.play_media plays a whole container (album/
+      # artist/playlist) directly via its own URI, the same call shape as a single
+      # track — no separate "expand and enqueue" step needed. Guard against the
+      # root level, which has no level_id and isn't itself playable.
+      - if: "{{ cur_id | string | length > 0 }}"
+        then:
+          - action: media_player.play_media
+            target:
+              entity_id: "{{ target }}"
+            data:
+              media_content_type: "{{ cur_type }}"
+              media_content_id: "{{ cur_id }}"
+
+  ma_browse_play_item:
+    alias: "MA Browse: play a listed item directly (skip drill-in)"
+    mode: restart
+    sequence:
+      - variables:
+          sel_type: "{{ state_attr('sensor.ma_browse_state', 'item' ~ index ~ '_type') }}"
+          sel_id: "{{ state_attr('sensor.ma_browse_state', 'item' ~ index ~ '_id') }}"
+      # Same media_player.play_media mechanism as ma_browse_play_level — works
+      # identically whether sel_id is a track or a whole album/artist/playlist.
+      - if: "{{ sel_id | string | length > 0 }}"
+        then:
+          - action: media_player.play_media
+            target:
+              entity_id: "{{ target }}"
+            data:
+              media_content_type: "{{ sel_type }}"
+              media_content_id: "{{ sel_id }}"
+
+  ma_browse_jump_letter:
+    alias: "MA Browse: jump to a letter (same level)"
+    mode: restart
+    sequence:
+      - action: script.ma_browse_render_lvl
+        data:
+          level_type: "{{ state_attr('sensor.ma_browse_state', 'level_type') }}"
+          level_id: "{{ state_attr('sensor.ma_browse_state', 'level_id') }}"
+          level_title: "{{ states('sensor.ma_browse_state') }}"
+          page_offset: 0
+          parent_stack: "{{ state_attr('sensor.ma_browse_state', 'parent_stack') | default([]) }}"
+          target: "{{ target }}"
+          jump_letter: "{{ letter }}"
