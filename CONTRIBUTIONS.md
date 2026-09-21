@@ -1,8 +1,8 @@
 # Changes on top of upstream `esphome-p4-86-panel-eth-2ro-lvgl`
 
 **Base version:** forked from upstream tag **`2026.07.02`**, then merged forward onto
-upstream `main` @ `a090b2e` (2026-07-31) on 2026-08-15 — this branch tracks the latest
-upstream revisions plus the features below.
+upstream `main` @ `a090b2e` (2026-07-31) on 2026-08-15 and `1c5132f` (`2026.09.17`) on
+2026-09-21 — this branch tracks the latest upstream revisions plus the features below.
 **Upstream:** https://github.com/chrisdunnname/esphome-p4-86-panel-eth-2ro-lvgl
 **This branch's file:** `esp32-p4-86-panel.yaml` (same filename as upstream — this is a
 personal fork branch, not a PR submission; see "Status" below).
@@ -13,8 +13,9 @@ repo's own `CONTRIBUTING.md` guidance: features are commented in-file (search fo
 `[FORK]`) and described here so they can, where practical, be isolated / included /
 excluded by others.
 
-**Status:** this is a personal fork, published for visibility/reference — not a pull
-request. No PR has been opened against upstream. Feel free to cherry-pick anything
+**Status:** this is a personal fork, published for visibility/reference. No PR has been
+opened against upstream. The media player (#2–4 below) is also kept as a standalone,
+upstream-ready branch, `media-player-upgrade`, containing only that change. Feel free to cherry-pick anything
 useful; the feature table below is meant to make that easy without having to read the
 whole diff.
 
@@ -25,9 +26,7 @@ whole diff.
 | # | Feature | New IDs / substitutions |
 |---|---------|-------------------------|
 | 1 | **Voice-assistant wake-sound latency fix + assist-button music pause/resume** | `assist_button_pressed` script, `music_paused_by_assist` global, reworked `voice_assistant` `on_end`/`on_idle`/`on_play` handlers |
-| 2 | **Full-screen album art with smaller-resolution images** | `album_art_resize` substitution (256x256), `online_image`/`image` resize + LVGL `zoom`/`antialias` on `img_album_art` / `img_mc_art` |
-| 3 | **Media picker + second media page** | `media_control_page`, scripts `apply_media_target` / `refresh_np`, `sp1..8` sensors, `media_target1..8` subs — substitution-driven, genericised on this branch |
-| 4 | **`music_default_playlist` substitution** | `music_default_playlist` |
+| 2–4 | **Media player: speaker picker, now-playing with album art, optional Music Assistant extras** (replaces the stock media page; same as branch `media-player-upgrade`) | `media_page` (rebuilt), `library_browse_page`, `media_set_page`; `media_target_count`, `media_target1..8_name`/`_entity`, `media_music_assistant`, `music_default_playlist`, `album_art_resize` substitutions; `apply_media_target` / `refresh_np` scripts; Home Assistant side in `home_assistant/` |
 | 5 | **Generic climate slots (HVAC *or* temperature sensor per slot)** | `climate_hvac_count` substitution; reworked `climateN_item` handlers + tiles. Slot 1 now uses upstream's own `climate_ac_page` rework (merged 2026-08-15); slots 2/3 still run the original substitution-driven generic-slots design |
 | 6 | **Climate mode dropdown + current/target temp read-back on open (bug fix)** | `on_load` blocks on `climate_ac_page` / `climate_studio_page2` / `_page3` — ported onto upstream's new `climate_ac_page` widget ids for slot 1 during the 2026-08-15 merge |
 | 7 | **Per-light detail ("studio") pages for all 6 lights** | `light_studio_page` / `_page2..6` |
@@ -38,6 +37,7 @@ whole diff.
 | 12 | **Tap listening/thinking/replying display to cancel voice assistant** | `on_click` on the 3 VA-state pages' root `obj`, guarded by `voice_assistant.is_running`, calls `voice_assistant.stop` (same action as the existing "stop" wake word) |
 | 13 | **Bigger bottom nav bar + rebalanced page layout** | `top_layer` buttonmatrix height 50→75; all 17 content-grid pages switched `align: CENTER` → `TOP_MID` + `y: ${taskbar_height}`; `page_content_height` 600→575. See in-file comments for the "why `TOP_MID`, not `CENTER`" reasoning if you resize the nav bar again |
 | 14 | **ETH-2RO relay control** | `relay1_pin`/`relay2_pin` substitutions (GPIO32/GPIO46 per Waveshare's wiki), two `switch: platform: gpio` entities, repurposed `controls_page` slots 2/3 for on-panel toggle buttons — only relevant if your board has the ETH-2RO expansion fitted |
+| 15 | **Screensaver returns after wake + screen-off without the screensaver** (bug fix) | touchscreen `on_release` restarts `saver_enabled`; extra screen-off branch in `saver_enabled` |
 
 ---
 
@@ -51,16 +51,16 @@ listening. Added `assist_button_pressed`: if the panel is playing its own audio 
 the assist button is pressed, it pauses that playback (`music_paused_by_assist` global)
 and auto-resumes when the assistant goes idle.
 
-### 2. Full-screen album art, smaller images
-`album_art_resize` fetches art at 256×256 (lower bandwidth / loop cost) and LVGL scales
-it up with `zoom` + `antialias`, restoring the full-screen look without large downloads.
-
-### 3. Media picker + second media page (`media_control_page`)
-Lets the user pick which media target the panel controls and shows now-playing on a
-second page. Substitution-driven (`media_target1..8_name`/`_entity`) so any user can
-plug in their own list of players. **Note:** this adds a number of Home Assistant
-`text_sensor`s and a `refresh_np` album-art refresh; on a busy device it contributes to
-main-loop load.
+### 2–4. Media player (`media_page`)
+Replaces upstream's stock media page (internal/external switcher) with a speaker picker
+and a now-playing view with full-screen album art (fetched small via `album_art_resize`
+and scaled up). Slot 1 is this panel (controlled on-device unless `media_target1_entity`
+is set), slot 2 defaults to `external_media_player`, and Output Audio Externally selects
+it; volume follows the selected speaker. Optional Music Assistant extras — library
+browser, "up next", artist-photo fallback and `music_default_playlist` — are off unless
+`media_music_assistant: "true"` and need the Home Assistant files in `home_assistant/`.
+Setup is documented in `CONFIGURATION.md` ("Media Page"). Kept identical to the
+upstream-ready `media-player-upgrade` branch.
 
 ### 5–6. Generic climate slots + read-back on open
 `climate_hvac_count` (default `3`) sets how many climate slots are HVAC units
@@ -97,3 +97,11 @@ GPIO32 and GPIO46 — plain GPIO output, opto-isolated on the board itself. Expo
 `switch` entities (register with Home Assistant automatically) and wired into the
 existing generic `controls_page` framework (slots 2/3, which were unused upstream
 placeholders) for on-panel toggle buttons — no new LVGL widgets needed.
+
+### 15. Screensaver after wake + screen-off without the screensaver
+`draw_display` calls `saver_enabled` before it leaves `saver_page`, so waking the panel
+armed only the screen-off timer and the screensaver never came back until some unrelated
+event re-ran `draw_display`; touches on other pages never restarted the countdown either.
+The touchscreen's `on_release` now restarts the countdown after the page switch. Screen-off
+also works with the screensaver disabled, pausing LVGL so the waking touch can't press a
+button.
