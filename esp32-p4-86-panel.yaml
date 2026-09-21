@@ -412,7 +412,6 @@ esp32:
   light_reset_brightness: "80"               # reset button: brightness %
   light_reset_hue: "27"                      # reset white point hue
   light_reset_sat: "45"                      # reset white point saturation
-  # Media picker targets - dropdown index maps to these players (slot 1 = this panel's own MA player).
   # Home screen 2 - optional second launcher of 6 tiles (home7..home12). Hidden by
   # default; set home_screen_2_hide_from_navigation: false and unhide tiles to use it.
   # Tip: point a tile's *_page at media_page to reach the Media Control page.
@@ -1849,12 +1848,6 @@ voice_assistant:
     - script.execute: draw_display
 
 script:
-  # --- Media speaker picker (Option A+) ---
-  # Map the dropdown index -> the Music Assistant entity we command.
-  # [FORK] Media picker — retarget the panel's media controls to a chosen player. See CONTRIBUTIONS.md §3.
-  # Drive the now-playing display (title/artist/art) from the SELECTED speaker's sensors.
-  # [FORK] Media picker — refresh now-playing / album art for the selected player. See CONTRIBUTIONS.md §3.
-
   # Manual assist trigger for the nav-bar mic button.
   # Mirrors the micro_wake_word on_wake_word_detected path so the on-device
   # experience is identical to saying the wake word.
@@ -5070,12 +5063,6 @@ text_sensor:
     entity_id: media_player.${external_media_player}
     id: ha_media_title
     attribute: media_content_id
-
-### LOCAL (this device) now-playing metadata for album art ###
-
-
-
-
 
   - platform: homeassistant
     name: "Alarm Status"
