@@ -1721,24 +1721,29 @@ voice_assistant:
           - media_player.is_announcing:
         timeout: 0.5s
     - lambda: ESP_LOGD("voice_assistant", "on_end announcement finished");
+    # [FIX 2026-07-19] This is upstream's safety net for a TTS announcement that
+    # wedges the shared mic/speaker I2S bus: wait for audio to finish, and if it
+    # is somehow STILL going after the timeout, reboot to unstick the bus.
+    # It used to also wait on / trip over `media_player.is_playing`, which cannot
+    # distinguish a wedged announcement from music playing perfectly normally.
+    # That was harmless only while this panel never played its own audio; once
+    # the panel played its own media (media page slot 1), any voice command issued
+    # while music was playing rebooted the device ~10-15s later
+    # ('Reset Reason' >> 'Reboot request from voice_assistant').
+    # Announcements only — normal playback must never force a reboot.
     - wait_until:
         condition:
-          - and:
-              - not:
-                  media_player.is_announcing:
-              - not:
-                  media_player.is_playing:
+          - not:
+              media_player.is_announcing:
         timeout: !lambda |-
           return id(voice_assistant_timeout);
     - if:
         condition:
           and:
             - lambda: return id(voice_assistant_reboot);
-            - any:
-                - media_player.is_announcing:
-                - media_player.is_playing:
+            - media_player.is_announcing:
         then:
-          - lambda: ESP_LOGD("voice_assistant", "Forced Reboot");
+          - lambda: ESP_LOGD("voice_assistant", "Forced Reboot - announcement did not finish");
           - button.press: reboot
     - mixer_speaker.apply_ducking:
         id: media_mixing_input

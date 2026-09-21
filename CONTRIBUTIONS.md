@@ -38,6 +38,7 @@ whole diff.
 | 13 | **Bigger bottom nav bar + rebalanced page layout** | `top_layer` buttonmatrix height 50→75; all 17 content-grid pages switched `align: CENTER` → `TOP_MID` + `y: ${taskbar_height}`; `page_content_height` 600→575. See in-file comments for the "why `TOP_MID`, not `CENTER`" reasoning if you resize the nav bar again |
 | 14 | **ETH-2RO relay control** | `relay1_pin`/`relay2_pin` substitutions (GPIO32/GPIO46 per Waveshare's wiki), two `switch: platform: gpio` entities, repurposed `controls_page` slots 2/3 for on-panel toggle buttons — only relevant if your board has the ETH-2RO expansion fitted |
 | 15 | **Screensaver returns after wake + screen-off without the screensaver** (bug fix) | touchscreen `on_release` restarts `saver_enabled`; extra screen-off branch in `saver_enabled` |
+| 16 | **Voice assistant no longer waits on / reboots over normal music playback** (bug fix) | `voice_assistant` `on_end`: wait and forced-reboot check use `media_player.is_announcing` only |
 
 ---
 
@@ -105,3 +106,10 @@ event re-ran `draw_display`; touches on other pages never restarted the countdow
 The touchscreen's `on_release` now restarts the countdown after the page switch. Screen-off
 also works with the screensaver disabled, pausing LVGL so the waking touch can't press a
 button.
+
+### 16. Voice-assistant forced reboot during music
+Upstream's `on_end` safety net waits for audio to finish and (with `voice_assistant_reboot`
+on) reboots if it is still going, to unstick a wedged announcement on the shared I2S bus.
+It also checked `media_player.is_playing`, which can't tell a stuck announcement from music
+playing normally, so a voice command during music held `on_end` for the full timeout and
+could reboot the panel. Both checks now look at announcements only.
