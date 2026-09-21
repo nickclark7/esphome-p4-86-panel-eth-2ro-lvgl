@@ -500,6 +500,11 @@ touchscreen:
               - lvgl.page.is_showing: saver_page
             then:
               - script.execute: draw_display
+        # [FORK 2026-09-21] Restart the screensaver countdown on every touch. draw_display
+        # calls saver_enabled *before* it leaves saver_page, so waking the panel used to
+        # arm only the screen-off timer and never re-arm the screensaver. This runs after
+        # the page switch (draw_display has no delays) and, via mode: restart, replaces it.
+        - script.execute: saver_enabled
 
 i2s_audio:
   - id: audio_bus
@@ -2459,6 +2464,23 @@ script:
               - lvgl.page.is_showing: saver_page
           then:
             - delay: !lambda return id(s_saver_blank_delay).state * 1000;
+            - light.turn_off: led
+            - output.set_level:
+                id: backlight_output
+                level: 0%
+      # [FORK 2026-09-21] Screen off without the screensaver: blank after
+      # s_saver_blank_delay of no touches. Pause LVGL explicitly (the led light's
+      # on_turn_off only fires on an on->off change) so the wake touch can't press
+      # whatever widget is under it; touchscreen on_release resumes LVGL and restores
+      # the backlight.
+      - if:
+          condition:
+            and:
+              - switch.is_off: s_saver
+              - switch.is_on: s_saver_mode
+          then:
+            - delay: !lambda return id(s_saver_blank_delay).state * 1000;
+            - lvgl.pause:
             - light.turn_off: led
             - output.set_level:
                 id: backlight_output
